@@ -4,6 +4,8 @@
 
 **What users do:** Create and manage construction projects, then for each project log daily site activity — workers present, materials consumed, equipment used, and incidents if any. Site Managers submit end-of-shift logs from their assigned site, Project Managers monitor all their projects from a centralized dashboard, and the Owner gets a full cross-project view with an AI assistant that answers questions about cost, progress, materials, workforce, and project performance across all historical records.
 
+**Scope:** Designed for civil engineering and construction companies managing multiple active projects such as residential buildings, commercial developments, roads, bridges, and infrastructure works. The platform focuses on project oversight, daily site operations, workforce tracking, material consumption monitoring, and progress reporting across all construction phases.
+
 **Purpose:** Construction firms running multiple simultaneous projects often lose visibility into daily progress, material consumption, equipment usage, and worker attendance because information is scattered across paper logs, spreadsheets, messaging groups, and disconnected systems. This provides a centralized daily site logging platform where every project submits structured end-of-shift reports, transforming fragmented field data into a single AI-queryable command center that enables leadership to monitor operations and make decisions without manually reviewing spreadsheets or reports.
 
 ---
