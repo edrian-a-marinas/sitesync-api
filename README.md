@@ -1,10 +1,10 @@
-# ApplyLens — AI Resume-to-Job Fit Analyzer & Application Tracker
+# SiteSync — Construction Project & Daily Site Log SaaS
 
 ## Plain English Concept
 
-**What users do:** Save one or more personal resumes, then for each job opportunity input a company name, job position, job description, and optionally a job posting URL and the platform they found it on (JobStreet, Indeed, LinkedIn, etc.). They receive an honest AI verdict with a 1–10 alignment score, matched skills, gaps, and improvement suggestions — or toggle to generate a tailored cover letter instead. Every analysis lives in one of two sections: Saved (not yet applied) or Applied (submitted), each with its own view and ordering.
+**What users do:** Create and manage construction projects, then for each project log daily site activity — workers present, materials consumed, equipment used, and incidents if any. Site Managers submit end-of-shift logs from their assigned site, Project Managers monitor all their projects from a centralized dashboard, and the Owner gets a full cross-project view with an AI assistant that answers questions about cost, progress, materials, workforce, and project performance across all historical records.
 
-**Purpose:** Job hunters apply blindly across dozens of companies and platforms and lose track of where everything stands — this gives them an honest pre-application audit with a clear alignment score so they prioritize the right applications first. The split between Saved and Applied, platform tagging, status tracking, and clickable job post links turn a chaotic multi-platform job hunt into one organized, data-informed command center.
+**Purpose:** Construction firms running multiple simultaneous projects often lose visibility into daily progress, material consumption, equipment usage, and worker attendance because information is scattered across paper logs, spreadsheets, messaging groups, and disconnected systems. This provides a centralized daily site logging platform where every project submits structured end-of-shift reports, transforming fragmented field data into a single AI-queryable command center that enables leadership to monitor operations and make decisions without manually reviewing spreadsheets or reports.
 
 ---
 
@@ -12,42 +12,45 @@
 
 ### Authentication & User Layer
 
-Users register and authenticate via JWT-based auth built into FastAPI. All resources — resumes, analyses, application records — are scoped per authenticated user. AWS IAM manages the backend's cloud credentials for S3 and RDS access, enforcing least-privilege access keys at the application layer.
+Users register and authenticate via JWT-based auth built into FastAPI. All resources — projects, site assignments, daily logs, attendance records, material entries, reports, and AI query history — are scoped per authenticated user and role. Three roles exist: Owner (full access, cross-project visibility, AI queries, and reporting), Project Manager (assigned projects only with full log management capabilities), and Site Worker (attendance submission and site-level reporting for assigned locations only). AWS IAM manages backend cloud credentials for S3 and RDS access, enforcing least-privilege permissions at the infrastructure layer.
 
-### Resume Storage
+### Project & Site Management
 
-Users upload resume files (PDF) through a FastAPI endpoint. Files are stored as objects in AWS S3 via boto3, keeping binary files out of the database entirely. The PostgreSQL database on AWS RDS stores only the resume metadata — filename, label, upload date, S3 object key — as a SQLAlchemy model. Users can save multiple resumes with custom labels (e.g., "Resume v1 - General", "Resume v2 - Backend Focus"). Alembic manages all schema migrations for the resumes table.
+Owners create projects with a name, location, budget, start date, and target completion date. Each project contains multiple phases such as Foundation, Structure, and Finishing, with budget allocations and progress tracking maintained separately for each phase. Project Managers are assigned to projects by the Owner, while Site Workers are assigned to specific sites under those projects. All project records are represented as SQLAlchemy models stored in AWS RDS PostgreSQL. Alembic manages schema migrations for projects, phases, assignments, and related project management tables.
 
-### Job Application Record
+### Daily Site Log
 
-Each application record is a SQLAlchemy model stored in RDS PostgreSQL containing: company name, job position, job description (text), optional job posting URL, optional platform source (JobStreet, Indeed, LinkedIn, etc.), AI verdict output, alignment score (1–10), generated cover letter (if requested), status (Saved / Applied / Interviewing / Rejected / Offer), pinned flag, and timestamps. Alembic handles all schema versioning for this table.
+Each end-of-shift log is stored as a SQLAlchemy model in RDS PostgreSQL and contains the project reference, submitting site manager, reporting date, workers present with hours worked, materials consumed with quantities and unit costs, equipment deployed, weather conditions, work accomplished, incident reports, and submission timestamps. Site Workers submit attendance information during their shifts while Project Managers complete and submit the final daily site report. Alembic manages all schema versioning for logs, attendance records, equipment usage, and material tracking tables.
 
-### AI Analysis Flow
+### File Storage
 
-When a user submits a job for analysis, the FastAPI endpoint validates all inputs via Pydantic, then pushes the heavy AI task to a Celery worker through Redis as the message broker — so the API responds immediately without waiting for the LLM. The Celery worker retrieves the relevant resume(s) from S3, assembles the full prompt context (resume content + job description + position + company), and calls the LLM to return a structured verdict: alignment score 1–10, matched skills, skill gaps, honest assessment, and improvement suggestions.
+Site Managers upload supporting documentation for daily logs including progress photos, material delivery receipts, inspection documents, and incident evidence. Files are stored as objects in AWS S3 via boto3, keeping binary data entirely outside the relational database. PostgreSQL stores only metadata such as filename, upload date, associated log reference, file type, and S3 object key through SQLAlchemy models. Alembic manages schema migrations for file and photo metadata tables.
 
-If cover letter mode is toggled, the worker instead prompts the LLM to generate a tailored cover letter for that specific job description and position. The structured AI output is written back to the application record in RDS on task completion. MCP exposes this backend data pipeline as a secure, open-standard interface connecting the custom backend context to AI client ecosystems.
+### Background Report Generation
 
-### Auto Resume Selector
+When a weekly progress report is requested — either manually by a Project Manager or automatically every Monday through Celery Beat — the FastAPI API submits a report-generation task to a Celery worker using Redis as the message broker so the request can return immediately. The worker aggregates all project activity for the reporting period, including workforce statistics, labor hours, material costs, equipment utilization, incidents, and completed work summaries. A structured PDF report is generated, uploaded to AWS S3, and the report metadata is written back to PostgreSQL upon completion. Owners and Project Managers can access historical reports through signed URL endpoints.
 
-If the user submits a job analysis without selecting a specific resume, the Celery worker retrieves all of the user's saved resumes from S3, sends them together with the job description to the LLM, and prompts it to identify the best-matching resume before running the full analysis on it. The selected resume label is stored on the record so the user knows which one was used.
+### AI Query Layer — RAG
+
+When an Owner or Project Manager submits a natural language question such as "Which project consumed the most cement this month?", "Which site had the most incidents this quarter?", or "Which phase is currently most over budget?", the FastAPI endpoint forwards the request to a Celery worker through Redis. The worker retrieves relevant structured context from PostgreSQL including project budgets, attendance records, material consumption logs, daily reports, incident records, and generated reports. The data is chunked and embedded, then semantic similarity search is performed using pgvector on RDS PostgreSQL to retrieve the most relevant context. The worker assembles the final prompt and calls the LLM to generate a direct, data-grounded answer. Queries and responses are stored per user for historical reference. MCP exposes this backend data pipeline as a secure, open-standard interface connecting the application's structured project data to AI client ecosystems.
 
 ### Caching
 
-Redis cache stores frequently accessed responses — resume lists, application record lists, dashboard stats — with TTL and invalidation on mutation. React Query on the frontend manages client-side cache sync, ensuring stale data is automatically revalidated after any create, update, or status change without requiring manual refreshes.
+Redis stores frequently accessed responses including project lists, dashboard KPIs, attendance summaries, material consumption statistics, budget reports, and AI query metadata. Cached responses use TTL expiration together with mutation-based invalidation strategies. React Query manages client-side cache synchronization, ensuring stale data is automatically revalidated after any project update, assignment change, daily log submission, attendance update, or report generation event without requiring manual refreshes.
 
-### Application Pipeline — Two Sections
+### Dashboard & KPIs
 
-Records default to Saved on creation. The user manually moves a record to Applied when they submit the real application. The Saved section is an unordered backlog. The Applied section is an ordered pipeline sorted by: pinned records first, then descending alignment score, then most recent.
-
-This gives the user an instant priority view of their strongest active applications at the top. Platform source tags (JobStreet, Indeed, etc.) are filterable so users can see how many applications they've sent per platform.
+The Owner dashboard provides organization-wide visibility across all active projects, displaying total active projects, budget versus actual spending, workforce activity, project health indicators, over-budget alerts, schedule delays, and company-wide material consumption trends. The Project Manager dashboard focuses on assigned projects and displays daily log completion status, budget utilization by phase, attendance rates, material usage trends, incident tracking, and project productivity metrics. All KPI data is Redis-cached and automatically invalidated whenever new site activity is recorded.
 
 ### Storage & Hosting
 
-FastAPI, Celery workers, and Redis are containerized with Docker and orchestrated locally via docker-compose for development. The live application runs on AWS EC2. Resume files live in AWS S3. All persistent relational data lives in AWS RDS PostgreSQL.
+FastAPI, Celery workers, and Redis are containerized with Docker and orchestrated locally through docker-compose during development. The production environment runs on AWS EC2. Site photos, uploaded documents, and generated PDF reports are stored in AWS S3, while all relational data is stored in AWS RDS PostgreSQL. Redis serves both as the caching layer and Celery message broker. After load testing with Locust identifies single-instance bottlenecks under approximately 500 concurrent users, an AWS Application Load Balancer (ALB) is placed in front of multiple EC2 instances to provide horizontal scaling and high availability.
 
-GitHub Actions runs the full Pytest + pytest-asyncio test suite on every push, covering endpoint tests, Celery task tests, AI output validation, role enforcement, and database operations, blocking any broken builds from merging.
+GitHub Actions runs the full Pytest and pytest-asyncio test suite on every push, covering API endpoints, Celery tasks, role-based access control, AI query validation, database operations, report generation workflows, and file upload functionality. Failed tests block deployment and prevent broken code from reaching production.
 
 ### Frontend
 
-Next.js with TypeScript handles all routing, page rendering, and UI layouts. TailwindCSS builds the responsive interface. Zod validates all form inputs client-side before any request reaches the backend. React Query manages all async data fetching, caching, and server state sync with the FastAPI layer.
+Next.js with TypeScript handles routing, page rendering, and application layouts. TailwindCSS builds the responsive user interface. Zod validates all client-side inputs including project creation forms, attendance records, daily site logs, material consumption entries, equipment usage records, and user assignments before requests reach the backend. React Query manages asynchronous data fetching, caching, and server-state synchronization with the FastAPI backend.
+
+UI/UX for roles
+All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects and the AI query panel, the Project Manager sees only their assigned projects, and the Site Worker sees only the daily log submission form for their site — same interface, different world inside it.
