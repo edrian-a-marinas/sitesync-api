@@ -1,0 +1,39 @@
+from typing import Annotated
+from pydantic import BaseModel, EmailStr
+from pydantic import StringConstraints
+
+PasswordStr = Annotated[str, StringConstraints(min_length=8, max_length=72)]
+NameStr = Annotated[str, StringConstraints(min_length=1, max_length=50, pattern=r'^[A-Za-z\s\-]+$')]
+PhoneStr = Annotated[str, StringConstraints(min_length=7, max_length=20)]
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: PasswordStr
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: PasswordStr
+    first_name: NameStr
+    middle_name: NameStr | None = None
+    last_name: NameStr
+    phone_number: PhoneStr | None = None
+    role_id: int
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: EmailStr
+    first_name: str
+    last_name: str
+    role_id: int
+    is_active: bool
+
+    class Config:
+        from_attributes = True
