@@ -3,6 +3,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     DATABASE_URL: str
     DEBUG: bool = False
+    SECRET_KEY: str
 
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
