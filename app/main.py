@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from app.core.settings import settings
 #from app.core.middleware import configure_middlewares
-#from app.core.limiter import configure_limiter
+from app.core.limiter import configure_limiter
 #from app.core.redis import redis_client
 
 from fastapi.exceptions import RequestValidationError
@@ -38,7 +38,7 @@ app = FastAPI(**settings.fastapi_kwargs, lifespan=lifespan)
 
 # Apply middleware and limiter
 #configure_middlewares(app)
-#configure_limiter(app)
+configure_limiter(app)
 
 API_PREFIX = "/api/v1"
 
