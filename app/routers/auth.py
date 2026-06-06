@@ -23,15 +23,11 @@ router = APIRouter(prefix="/auth", tags=["Auth"])
 @limiter.limit("5/minute")
 async def login(
     request: Request,
-    form_data: OAuth2PasswordRequestForm = Depends(),
-    db: AsyncSession = Depends(get_db)
+    data: LoginRequest,
+    db: AsyncSession = Depends(get_db),
 ):
     try:
-        token = await login_user(
-            LoginRequest(email=form_data.username, password=form_data.password),
-            db,
-            request
-        )
+        token = await login_user(data, db, request)
         return TokenResponse(access_token=token)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
