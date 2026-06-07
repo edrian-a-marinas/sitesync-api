@@ -1,4 +1,5 @@
 from celery import Celery
+from celery.schedules import crontab
 
 from app.core.settings import settings
 
@@ -15,4 +16,10 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="Asia/Manila",
     enable_utc=True,
+    beat_schedule={
+        "weekly-report-every-monday": {
+            "task": "trigger_all_weekly_reports",
+            "schedule": crontab(hour=8, minute=0, day_of_week=1),
+        }
+    },
 )

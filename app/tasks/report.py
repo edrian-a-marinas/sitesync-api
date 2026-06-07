@@ -115,3 +115,18 @@ Open Incidents: {len([i for i in incidents if i.status == "Open"])}
         await db.commit()
 
         logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=success")
+
+
+@celery_app.task(name="trigger_all_weekly_reports")
+def trigger_all_weekly_reports():
+    import asyncio
+
+    asyncio.run(_trigger_all_weekly_reports())
+
+
+async def _trigger_all_weekly_reports():
+    async with AsyncSessionLocal() as db:
+        projects = (await db.execute(select(Project).where(Project.status == "Active"))).scalars().all()
+        for project in projects:
+            generate_weekly_report.delay(project.id, project.owner_id)
+            logger.info(f"REPORT_TRIGGER | project_id={project.id} | status=queued")
