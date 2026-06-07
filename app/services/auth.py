@@ -46,6 +46,7 @@ async def register_user(data: RegisterRequest, db: AsyncSession, request: Reques
         last_name=data.last_name,
         phone_number=data.phone_number,
         role_id=data.role_id,
+        created_by=created_by.id,
     )
     db.add(user)
     await db.commit()

@@ -18,6 +18,7 @@ class User(Base):
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     role: Mapped["Role"] = relationship("Role", back_populates="users")
     projects_owned: Mapped[list["Project"]] = relationship("Project", back_populates="owner")
