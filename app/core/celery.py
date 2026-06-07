@@ -7,7 +7,7 @@ celery_app = Celery(
     "sitesync",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.report"],
+    include=["app.tasks.report", "app.tasks.ai_query"],
 )
 
 celery_app.conf.update(

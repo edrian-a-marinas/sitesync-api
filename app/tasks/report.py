@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import date, timedelta
 
@@ -18,9 +19,12 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="generate_weekly_report")
 def generate_weekly_report(project_id: int, generated_by: int):
-    import asyncio
-
-    asyncio.run(_generate_weekly_report(project_id, generated_by))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_generate_weekly_report(project_id, generated_by))
+    finally:
+        loop.close()
 
 
 async def _generate_weekly_report(project_id: int, generated_by: int):
@@ -119,9 +123,12 @@ Open Incidents: {len([i for i in incidents if i.status == "Open"])}
 
 @celery_app.task(name="trigger_all_weekly_reports")
 def trigger_all_weekly_reports():
-    import asyncio
-
-    asyncio.run(_trigger_all_weekly_reports())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(_trigger_all_weekly_reports())
+    finally:
+        loop.close()
 
 
 async def _trigger_all_weekly_reports():
