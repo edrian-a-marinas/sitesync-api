@@ -1,3 +1,4 @@
+from app.routers.ai_query import router as ai_query_router
 from app.routers.attendance import router as attendance_router
 from app.routers.auth import router as auth_router
 from app.routers.daily_log import router as daily_log_router
@@ -18,4 +19,5 @@ all_routers = [
     equipment_router,
     incident_router,
     dashboard_router,
+    ai_query_router,
 ]
