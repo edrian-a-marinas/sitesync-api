@@ -55,7 +55,7 @@ GitHub Actions runs the full Pytest and pytest-asyncio test suite on every push,
 Next.js with TypeScript handles routing, page rendering, and application layouts. TailwindCSS builds the responsive user interface. Zod validates all client-side inputs including project creation forms, attendance records, daily site logs, material consumption entries, equipment usage records, and user assignments before requests reach the backend. React Query manages asynchronous data fetching, caching, and server-state synchronization with the FastAPI backend.
 
 UI/UX for roles
-All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects and the AI query panel, the Project Manager sees only their assigned projects, and the Site Worker sees only the daily log submission form for their site — same interface, different world inside it.
+All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects and the AI query panel, the Project Manager sees only their assigned projects, and the The Site Worker sees only their assigned project, their own attendance history, and the daily log for their current shift — same interface, different world inside it. — same interface, different world inside it.
 
 ### EXTRASS 
 
