@@ -56,3 +56,9 @@ Next.js with TypeScript handles routing, page rendering, and application layouts
 
 UI/UX for roles
 All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects and the AI query panel, the Project Manager sees only their assigned projects, and the Site Worker sees only the daily log submission form for their site — same interface, different world inside it.
+
+### EXTRASS 
+
+Owner — the construction company owner/CEO. The person who runs the business, owns all projects, sees everything, uses the AI assistant to make decisions. Not necessarily technical — just the boss.
+Project Manager — in construction this is typically the Civil Engineer or Site Engineer or Foreman. They manage the full project lifecycle, submit daily logs, monitor budget vs actual, assign workers. Could also be a Foreman in smaller firms.
+Site Worker — the construction workers on the ground. Masons, carpenters, electricians, laborers. They just log attendance and see their daily tasks. No management access.
