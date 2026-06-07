@@ -13,8 +13,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.limiter import configure_limiter
 
-#from app.core.middleware import configure_middlewares
-#from app.core.redis import redis_client
+# from app.core.middleware import configure_middlewares
+# from app.core.redis import redis_client
 from app.core.logging import http_exception_handler, validation_exception_handler
 from app.core.settings import settings
 from app.routers import all_routers
@@ -25,7 +25,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 
 # Apply middleware and limiter
-#configure_middlewares(app)
+# configure_middlewares(app)
 configure_limiter(app)
 
 API_PREFIX = "/api/v1"

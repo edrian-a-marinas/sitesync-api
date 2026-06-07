@@ -29,9 +29,7 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
 
     # PM — only assigned projects
     result = await db.execute(
-        select(Project)
-        .join(ProjectAssignment, ProjectAssignment.project_id == Project.id)
-        .where(ProjectAssignment.user_id == current_user.id)
+        select(Project).join(ProjectAssignment, ProjectAssignment.project_id == Project.id).where(ProjectAssignment.user_id == current_user.id)
     )
     return result.scalars().all()
 
@@ -44,11 +42,11 @@ async def get_project(project_id: int, current_user: User, db: AsyncSession) -> 
         return project
 
     # PM — check if assigned
-    assigned = (await db.execute(
-        select(ProjectAssignment)
-        .where(ProjectAssignment.project_id == project_id)
-        .where(ProjectAssignment.user_id == current_user.id)
-    )).scalar_one_or_none()
+    assigned = (
+        await db.execute(
+            select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
     return project if assigned else None
 
 
@@ -81,7 +79,9 @@ async def assign_manager(project_id: int, data: AssignManagerRequest, current_us
     # Only project managers can be assigned as managers
     manager = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
     if not manager or manager.role_id != 2:
-        logger.warning(f"ASSIGN_MANAGER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a project manager")
+        logger.warning(
+            f"ASSIGN_MANAGER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a project manager"
+        )
         return None
 
     assignment = ProjectAssignment(project_id=project_id, user_id=data.user_id)
@@ -100,7 +100,9 @@ async def assign_worker(project_id: int, data: AssignWorkerRequest, current_user
     # Only site workers can be assigned as workers
     worker = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
     if not worker or worker.role_id != 3:
-        logger.warning(f"ASSIGN_WORKER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a site worker")
+        logger.warning(
+            f"ASSIGN_WORKER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a site worker"
+        )
         return None
 
     assignment = WorkerAssignment(project_id=project_id, user_id=data.user_id)
@@ -127,11 +129,9 @@ async def update_phase(project_id: int, phase_id: int, data: PhaseUpdate, curren
     project = await get_project(project_id, current_user, db)
     if not project:
         return None
-    phase = (await db.execute(
-        select(ProjectPhase)
-        .where(ProjectPhase.id == phase_id)
-        .where(ProjectPhase.project_id == project_id)
-    )).scalar_one_or_none()
+    phase = (
+        await db.execute(select(ProjectPhase).where(ProjectPhase.id == phase_id).where(ProjectPhase.project_id == project_id))
+    ).scalar_one_or_none()
     if not phase:
         return None
     for field, value in data.model_dump(exclude_none=True).items():

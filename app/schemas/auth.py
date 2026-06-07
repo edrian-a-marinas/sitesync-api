@@ -3,7 +3,7 @@ from typing import Annotated
 from pydantic import BaseModel, EmailStr, StringConstraints
 
 PasswordStr = Annotated[str, StringConstraints(min_length=8, max_length=72)]
-NameStr = Annotated[str, StringConstraints(min_length=1, max_length=50, pattern=r'^[A-Za-z\s\-]+$')]
+NameStr = Annotated[str, StringConstraints(min_length=1, max_length=50, pattern=r"^[A-Za-z\s\-]+$")]
 PhoneStr = Annotated[str, StringConstraints(min_length=7, max_length=20)]
 
 

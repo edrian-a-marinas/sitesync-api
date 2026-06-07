@@ -21,7 +21,9 @@ async def register_user(data: RegisterRequest, db: AsyncSession, request: Reques
     owner_role = await get_role_by_name("owner", db)
 
     if data.role_id == owner_role.id:
-        logger.warning(f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=cannot create owner")
+        logger.warning(
+            f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=cannot create owner"
+        )
         raise ValueError("Cannot create owner account")
 
     project_manager_role = await get_role_by_name("project_manager", db)
@@ -29,12 +31,16 @@ async def register_user(data: RegisterRequest, db: AsyncSession, request: Reques
     if created_by.role_id == project_manager_role.id:
         site_worker_role = await get_role_by_name("site_worker", db)
         if data.role_id != site_worker_role.id:
-            logger.warning(f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=manager can only create site workers")
+            logger.warning(
+                f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=manager can only create site workers"
+            )
             raise ValueError("Project Managers can only register site workers")
 
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
-        logger.warning(f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=email already exists")
+        logger.warning(
+            f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=email already exists"
+        )
         raise ValueError("Email already registered")
 
     user = User(

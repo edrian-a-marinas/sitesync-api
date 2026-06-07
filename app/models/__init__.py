@@ -17,8 +17,19 @@ from app.models.site_photo import SitePhoto
 from app.models.user import User
 
 __all__ = [
-    "Role", "User",
-    "Project", "ProjectPhase", "ProjectAssignment", "WorkerAssignment",
-    "DailyLog", "Attendance", "Material", "Equipment",
-    "Incident", "SitePhoto", "Report", "AIQuery", "Notification",
+    "Role",
+    "User",
+    "Project",
+    "ProjectPhase",
+    "ProjectAssignment",
+    "WorkerAssignment",
+    "DailyLog",
+    "Attendance",
+    "Material",
+    "Equipment",
+    "Incident",
+    "SitePhoto",
+    "Report",
+    "AIQuery",
+    "Notification",
 ]

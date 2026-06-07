@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     @property
     def SYNC_DATABASE_URL(self) -> str:
         return self.DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
-    
 
     # Controls debug mode and hides docs in production
     @property
@@ -24,5 +23,6 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
 
 settings = Settings()

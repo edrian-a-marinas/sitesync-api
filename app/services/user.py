@@ -19,9 +19,7 @@ async def get_users(current_user: User, db: AsyncSession) -> list[User]:
     result = await db.execute(
         select(User)
         .join(ProjectAssignment, ProjectAssignment.user_id == User.id)
-        .where(ProjectAssignment.project_id.in_(
-            select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
-        ))
+        .where(ProjectAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
     )
     return result.scalars().unique().all()
 
@@ -34,13 +32,13 @@ async def get_user(user_id: int, current_user: User, db: AsyncSession) -> User |
         return user
 
     # PM — verify user is in their projects
-    in_project = (await db.execute(
-        select(ProjectAssignment)
-        .where(ProjectAssignment.user_id == user_id)
-        .where(ProjectAssignment.project_id.in_(
-            select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
-        ))
-    )).scalar_one_or_none()
+    in_project = (
+        await db.execute(
+            select(ProjectAssignment)
+            .where(ProjectAssignment.user_id == user_id)
+            .where(ProjectAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
+        )
+    ).scalar_one_or_none()
     return user if in_project else None
 
 
