@@ -16,14 +16,10 @@ class DailyLogUpdate(BaseModel):
     notes: str | None = None
 
 
-class DailyLogResponse(BaseModel):
+class DailyLogResponse(DailyLogCreate):
     id: int
     project_id: int
     submitted_by: int
-    log_date: date
-    weather_condition: str | None
-    work_accomplished: str
-    notes: str | None
 
     class Config:
         from_attributes = True

@@ -12,9 +12,7 @@ class LoginRequest(BaseModel):
     password: PasswordStr
 
 
-class RegisterRequest(BaseModel):
-    email: EmailStr
-    password: PasswordStr
+class RegisterRequest(LoginRequest):
     first_name: NameStr
     middle_name: NameStr | None = None
     last_name: NameStr

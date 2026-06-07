@@ -24,15 +24,9 @@ class ProjectUpdate(BaseModel):
     status: str | None = None
 
 
-class ProjectResponse(BaseModel):
+class ProjectResponse(ProjectCreate):
     id: int
     owner_id: int
-    name: str
-    location: str
-    total_budget: float
-    start_date: date
-    target_end_date: date
-    status: str
 
     class Config:
         from_attributes = True
@@ -50,20 +44,13 @@ class PhaseUpdate(BaseModel):
     status: str | None = None
 
 
-class PhaseResponse(BaseModel):
+class PhaseResponse(PhaseCreate):
     id: int
     project_id: int
-    name: str
-    allocated_budget: float
-    status: str
 
     class Config:
         from_attributes = True
 
 
-class AssignManagerRequest(BaseModel):
-    user_id: int
-
-
-class AssignWorkerRequest(BaseModel):
+class AssignUserRequest(BaseModel):
     user_id: int
