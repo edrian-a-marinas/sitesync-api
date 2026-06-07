@@ -3,17 +3,12 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import get_current_user, require_owner_or_manager
+from app.core.limiter import limiter
 from app.database import get_db
+from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.services.auth import login_user, register_user
-
-from app.core.dependencies import require_owner_or_manager, get_current_user
-from app.models.user import User
-
-from app.core.limiter import limiter
-from slowapi.util import get_remote_address
-
-from fastapi.security import OAuth2PasswordRequestForm
 
 logger = logging.getLogger(__name__)
 

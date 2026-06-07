@@ -3,9 +3,21 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.project import Project, ProjectPhase, ProjectAssignment, WorkerAssignment
+from app.models.project import (
+    Project,
+    ProjectAssignment,
+    ProjectPhase,
+    WorkerAssignment,
+)
 from app.models.user import User
-from app.schemas.project import ProjectCreate, ProjectUpdate, PhaseCreate, PhaseUpdate, AssignManagerRequest, AssignWorkerRequest
+from app.schemas.project import (
+    AssignManagerRequest,
+    AssignWorkerRequest,
+    PhaseCreate,
+    PhaseUpdate,
+    ProjectCreate,
+    ProjectUpdate,
+)
 
 logger = logging.getLogger(__name__)
 

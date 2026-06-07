@@ -1,5 +1,6 @@
 from datetime import date
 from typing import Annotated
+
 from pydantic import BaseModel, StringConstraints
 
 NameStr = Annotated[str, StringConstraints(min_length=1, max_length=100)]

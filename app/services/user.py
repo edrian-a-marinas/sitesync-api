@@ -3,8 +3,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.user import User
 from app.models.project import ProjectAssignment
+from app.models.user import User
 from app.schemas.auth import UserUpdateRequest
 
 logger = logging.getLogger(__name__)

@@ -7,8 +7,8 @@ from sqlalchemy.future import select
 
 from app.core.security import decode_access_token
 from app.database import get_db
-from app.models.user import User
 from app.models.role import Role
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 

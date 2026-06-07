@@ -1,6 +1,15 @@
-from sqlalchemy import Integer, String, Date, ForeignKey, UniqueConstraint, DateTime, Text
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
+
 from app.database import Base
 
 
