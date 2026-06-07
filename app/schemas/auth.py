@@ -37,3 +37,11 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- User Management ---------------------------------------------------------
+class UserUpdateRequest(BaseModel):
+    first_name: NameStr | None = None
+    middle_name: NameStr | None = None
+    last_name: NameStr | None = None
+    phone_number: PhoneStr | None = None
