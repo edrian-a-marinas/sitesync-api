@@ -11,8 +11,7 @@ from app.models.project import (
 )
 from app.models.user import User
 from app.schemas.project import (
-    AssignManagerRequest,
-    AssignWorkerRequest,
+    AssignUserRequest,
     PhaseCreate,
     PhaseUpdate,
     ProjectCreate,
@@ -71,7 +70,7 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
     return project
 
 
-async def assign_manager(project_id: int, data: AssignManagerRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
+async def assign_manager(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
     project = await get_project(project_id, current_user, db)
     if not project:
         return None
@@ -92,7 +91,7 @@ async def assign_manager(project_id: int, data: AssignManagerRequest, current_us
     return assignment
 
 
-async def assign_worker(project_id: int, data: AssignWorkerRequest, current_user: User, db: AsyncSession) -> WorkerAssignment | None:
+async def assign_worker(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> WorkerAssignment | None:
     project = await get_project(project_id, current_user, db)
     if not project:
         return None

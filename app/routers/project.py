@@ -8,8 +8,7 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.project import (
-    AssignManagerRequest,
-    AssignWorkerRequest,
+    AssignUserRequest,
     PhaseCreate,
     PhaseResponse,
     PhaseUpdate,
@@ -87,7 +86,7 @@ async def update_project_endpoint(
 @limiter.limit("10/minute")
 async def assign_manager_endpoint(
     project_id: int,
-    data: AssignManagerRequest,
+    data: AssignUserRequest,
     request: Request,
     current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
@@ -102,7 +101,7 @@ async def assign_manager_endpoint(
 @limiter.limit("10/minute")
 async def assign_worker_endpoint(
     project_id: int,
-    data: AssignWorkerRequest,
+    data: AssignUserRequest,
     request: Request,
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
