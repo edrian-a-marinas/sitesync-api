@@ -22,7 +22,7 @@ Owners create projects with a name, location, budget, start date, and target com
 
 ### Daily Site Log
 
-Each end-of-shift log is stored as a SQLAlchemy model in RDS PostgreSQL and contains the project reference, submitting site manager, reporting date, workers present with hours worked, materials consumed with quantities and unit costs, equipment deployed, weather conditions, work accomplished, incident reports, and submission timestamps. Site Workers submit attendance information during their shifts while Project Managers complete and submit the final daily site report. Alembic manages all schema versioning for logs, attendance records, equipment usage, and material tracking tables.
+Each end-of-shift log is stored as a SQLAlchemy model in RDS PostgreSQL and contains the project reference, submitting site manager, reporting date, workers present with hours worked, materials consumed with quantities and unit costs, equipment deployed, weather conditions, work accomplished, incident reports, and submission timestamps. Project Managers submit attendance on behalf of their assigned workers during end-of-shift logging. Site Workers can view their own attendance history but do not submit attendance directly. Alembic manages all schema versioning for logs, attendance records, equipment usage, and material tracking tables.
 
 ### File Storage
 
