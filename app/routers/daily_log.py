@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner_or_manager
@@ -52,7 +53,7 @@ async def create_log_endpoint(
 ):
     try:
         return await create_log(project_id, data, current_user, db)
-    except Exception:
+    except IntegrityError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Log already exists for this date")
 
 
