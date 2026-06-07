@@ -24,8 +24,6 @@ AsyncSessionLocal = async_sessionmaker(
 class Base(DeclarativeBase):
     pass
 
-SYNC_DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg", "postgresql+psycopg2")
-
 async def get_db():
     async with AsyncSessionLocal() as session:
         try:
