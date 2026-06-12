@@ -12,6 +12,7 @@ from app.core.security import hash_password
 from app.core.settings import settings
 from app.database import Base, get_db
 from app.main import app
+from app.models.daily_log import DailyLog
 from app.models.role import Role
 from app.models.user import User
 
@@ -103,10 +104,8 @@ async def get_auth_token(client: AsyncClient, email: str, password: str) -> str:
     return res.json().get("access_token", "")
 
 
-async def create_daily_log(db: AsyncSession, project_id: int, submitted_by: int, log_date: str = "2026-01-01") -> "DailyLog":
+async def create_daily_log(db: AsyncSession, project_id: int, submitted_by: int, log_date: str = "2026-01-01") -> DailyLog:
     from datetime import date
-
-    from app.models.daily_log import DailyLog
 
     log = DailyLog(
         project_id=project_id,
