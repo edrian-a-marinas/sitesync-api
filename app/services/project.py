@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import get_cache, set_cache
 from app.models.project import (
     Project,
     ProjectAssignment,
@@ -21,32 +22,46 @@ from app.schemas.project import (
 logger = logging.getLogger(__name__)
 
 
+PROJECTS_TTL = 120
+
+
 async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
+    cache_key = f"projects:user:{current_user.id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        return [Project(**p) for p in cached]
+
     if current_user.role_id == 1:
         result = await db.execute(select(Project))
-        return result.scalars().all()
+        projects = result.scalars().all()
+    else:
+        # PM — only assigned projects
+        result = await db.execute(
+            select(Project).join(ProjectAssignment, ProjectAssignment.project_id == Project.id).where(ProjectAssignment.user_id == current_user.id)
+        )
+        projects = result.scalars().all()
 
-    # PM — only assigned projects
-    result = await db.execute(
-        select(Project).join(ProjectAssignment, ProjectAssignment.project_id == Project.id).where(ProjectAssignment.user_id == current_user.id)
-    )
-    return result.scalars().all()
+    await set_cache(cache_key, [p.__dict__ for p in projects], PROJECTS_TTL)
+    return projects
 
 
 async def get_project(project_id: int, current_user: User, db: AsyncSession) -> Project | None:
     project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
     if not project:
+        logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
     if current_user.role_id == 1:
         return project
-
     # PM — check if assigned
     assigned = (
         await db.execute(
             select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
         )
     ).scalar_one_or_none()
-    return project if assigned else None
+    if not assigned:
+        logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=access_denied")
+        return None
+    return project
 
 
 async def create_project(data: ProjectCreate, current_user: User, db: AsyncSession) -> Project:
@@ -61,6 +76,7 @@ async def create_project(data: ProjectCreate, current_user: User, db: AsyncSessi
 async def update_project(project_id: int, data: ProjectUpdate, current_user: User, db: AsyncSession) -> Project | None:
     project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
     if not project:
+        logger.warning(f"PROJECT_UPDATE | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(project, field, value)
@@ -132,6 +148,7 @@ async def update_phase(project_id: int, phase_id: int, data: PhaseUpdate, curren
         await db.execute(select(ProjectPhase).where(ProjectPhase.id == phase_id).where(ProjectPhase.project_id == project_id))
     ).scalar_one_or_none()
     if not phase:
+        logger.warning(f"PHASE_UPDATE | project_id={project_id} | phase_id={phase_id} | user_id={current_user.id} | status=not_found")
         return None
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(phase, field, value)
