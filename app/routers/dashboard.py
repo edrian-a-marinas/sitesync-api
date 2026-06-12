@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,8 +7,6 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.dashboard import OwnerDashboard, ProjectManagerDashboard, WorkerDashboard
 from app.services.dashboard import get_manager_dashboard, get_owner_dashboard, get_worker_dashboard
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 

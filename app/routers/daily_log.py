@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,8 +8,6 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogResponse, DailyLogUpdate
 from app.services.daily_log import create_log, get_log, get_logs, update_log
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/daily-logs", tags=["Daily Logs"])
 

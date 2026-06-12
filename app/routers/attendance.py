@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,8 +7,6 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.attendance import AttendanceCreate, AttendanceResponse
 from app.services.attendance import get_attendance, submit_attendance
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/daily-logs/{log_id}/attendance", tags=["Attendance"])
 

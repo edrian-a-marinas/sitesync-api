@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +8,6 @@ from app.models.user import User
 from app.schemas.report import ReportResponse
 from app.services.report import get_reports
 from app.tasks.report import generate_weekly_report
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -25,7 +21,6 @@ async def trigger_report(
     db: AsyncSession = Depends(get_db),
 ):
     generate_weekly_report.delay(project_id, current_user.id)
-    logger.info(f"REPORT | project_id={project_id} | user_id={current_user.id} | task=queued")
     raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Report generation started")
 
 

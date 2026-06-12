@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,8 +8,6 @@ from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest, AIQueryResponse
 from app.services.ai_query import create_query, get_queries, get_query
 from app.tasks.ai_query import process_ai_query
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -26,7 +22,6 @@ async def submit_query(
 ):
     query = await create_query(data, current_user, db)
     process_ai_query.delay(query.id)
-    logger.info(f"AI_QUERY | query_id={query.id} | user_id={current_user.id} | task=queued")
     return query
 
 

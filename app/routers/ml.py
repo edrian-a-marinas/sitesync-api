@@ -1,5 +1,3 @@
-import logging
-
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +12,6 @@ from app.services.ml import (
     get_material_forecast_predictions,
 )
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ml", tags=["ML Analytics"])
 
 

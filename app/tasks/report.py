@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="generate_weekly_report")
 def generate_weekly_report(project_id: int, generated_by: int):
+    logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | task=queued")
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
