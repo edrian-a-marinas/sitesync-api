@@ -23,7 +23,7 @@ from app.schemas.project import (
 logger = logging.getLogger(__name__)
 
 
-PROJECTS_TTL = settings.PROJECTS_TTL
+PROJECTS_TTL = int(settings.PROJECTS_TTL)
 
 
 async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:

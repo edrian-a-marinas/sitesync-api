@@ -75,3 +75,8 @@ async def create_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def get_auth_token(client: AsyncClient, email: str, password: str) -> str:
+    res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    return res.json().get("access_token", "")

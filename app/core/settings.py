@@ -15,12 +15,12 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
 
     # Constants / hard coded
-    PROJECTS_TTL = 120
+    PROJECTS_TTL: int = 120
 
-    OWNER_DASHBOARD_TTL = 60
-    MANAGER_DASHBOARD_TTL = 60
+    OWNER_DASHBOARD_TTL: int = 60
+    MANAGER_DASHBOARD_TTL: int = 60
 
-    ROW_LIMIT = 20
+    ROW_LIMIT: int = 20
 
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
