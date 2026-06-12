@@ -3,11 +3,13 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     DATABASE_URL: str
+    TEST_DATABASE_URL: str = ""
     DEBUG: bool = False
     SECRET_KEY: str
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_CACHE_URL: str = "redis://localhost:6379/1"
     GROQ_API_KEY: str
+
 
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
