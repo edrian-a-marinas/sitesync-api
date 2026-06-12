@@ -13,11 +13,13 @@ from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerA
 from app.models.user import User
 from app.schemas.dashboard import OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
 
+from app.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
-OWNER_DASHBOARD_TTL = 60
-MANAGER_DASHBOARD_TTL = 60
+OWNER_DASHBOARD_TTL = settings.OWNER_DASHBOARD_TTL
+MANAGER_DASHBOARD_TTL = settings.MANAGER_DASHBOARD_TTL
 
 
 async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:

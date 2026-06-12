@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.core.settings import settings
 from app.models.project import (
     Project,
     ProjectAssignment,
@@ -22,7 +23,7 @@ from app.schemas.project import (
 logger = logging.getLogger(__name__)
 
 
-PROJECTS_TTL = 120
+PROJECTS_TTL = settings.PROJECTS_TTL
 
 
 async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:

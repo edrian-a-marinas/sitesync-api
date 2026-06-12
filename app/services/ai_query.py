@@ -13,12 +13,14 @@ from app.models.project import Project, ProjectPhase
 from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest
 
+from app.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
 # ==================== RAG ====================
 
-_ROW_LIMIT = 20
+_ROW_LIMIT = settings.ROW_LIMIT
 
 _INTENT_KEYWORDS: dict[str, list[str]] = {
     "materials": [

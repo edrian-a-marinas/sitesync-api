@@ -2,6 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # .env / secrets
     DATABASE_URL: str
     TEST_DATABASE_URL: str
     DEBUG: bool = False
@@ -12,6 +13,14 @@ class Settings(BaseSettings):
 
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+
+    # Constants / hard coded
+    PROJECTS_TTL = 120
+
+    OWNER_DASHBOARD_TTL = 60
+    MANAGER_DASHBOARD_TTL = 60
+
+    ROW_LIMIT = 20
 
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
