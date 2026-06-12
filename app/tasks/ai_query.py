@@ -8,7 +8,7 @@ from app.core.celery import celery_app
 from app.core.settings import settings
 from app.database import AsyncSessionLocal
 from app.models.ai_query import AIQuery
-from app.services.ai_query import build_context, extract_keywords
+from app.services.ai_query import retrieve_context
 
 logger = logging.getLogger(__name__)
 
@@ -35,27 +35,19 @@ async def _process_ai_query(query_id: int):
         if not query:
             logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason=not found")
             return
-
         try:
             client = get_groq_client()
-            context = await build_context(db, query.project_id)
-            keywords = extract_keywords(query.question)
-
+            context = await retrieve_context(db, query.question, query.project_id)
             prompt = f"""You are SiteSync AI, an assistant for construction project management.
 Answer directly and concisely based only on the data provided. No preambles, no unsolicited advice.
-
 RULES:
 1. Answer only what was asked.
 2. Use specific numbers from the data.
 3. If data is insufficient, say so briefly.
 4. Never make up data not present in the context.
 5. Keep answers short — 2-3 sentences max unless a breakdown is needed.
-
-RELEVANT KEYWORDS FROM QUESTION: {", ".join(keywords) if keywords else "general"}
-
 PROJECT DATA:
 {context}
-
 QUESTION: {query.question}"""
 
             response = client.chat.completions.create(
