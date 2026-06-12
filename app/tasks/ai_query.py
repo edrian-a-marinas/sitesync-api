@@ -58,7 +58,7 @@ QUESTION: {query.question}"""
 
             query.answer = response.choices[0].message.content
             query.status = "Done"
-            logger.info(f"AI_QUERY | query_id={query_id} | keywords={keywords} | status=done")
+            logger.info(f"AI_QUERY | query_id={query_id} | status=done")
 
         except Exception as e:
             query.status = "Failed"
