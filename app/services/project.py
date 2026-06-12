@@ -32,7 +32,7 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
     if cached:
         return [Project(**p) for p in cached]
 
-    if current_user.role_id == 1:
+    if current_user.role.name == "owner":
         result = await db.execute(select(Project))
         projects = result.scalars().all()
     else:
@@ -53,7 +53,7 @@ async def get_project(project_id: int, current_user: User, db: AsyncSession) -> 
     if not project:
         logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
-    if current_user.role_id == 1:
+    if current_user.role.name == "owner":
         return project
     # PM — check if assigned
     assigned = (
@@ -100,7 +100,7 @@ async def assign_manager(project_id: int, data: AssignUserRequest, current_user:
 
     # Only project managers can be assigned as managers
     manager = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
-    if not manager or manager.role_id != 2:
+    if not manager or not manager.role or manager.role.name != "project_manager":
         logger.warning(
             f"ASSIGN_MANAGER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a project manager"
         )
@@ -121,7 +121,7 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
 
     # Only site workers can be assigned as workers
     worker = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
-    if not worker or worker.role_id != 3:
+    if not worker or not worker.role or worker.role.name != "site_worker":
         logger.warning(
             f"ASSIGN_WORKER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a site worker"
         )

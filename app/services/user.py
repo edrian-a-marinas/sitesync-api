@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 async def get_users(current_user: User, db: AsyncSession) -> list[User]:
-    if current_user.role_id == 1:
+    if current_user.role.name == "owner":
         result = await db.execute(select(User))
         return result.scalars().all()
 
@@ -28,7 +28,7 @@ async def get_user(user_id: int, current_user: User, db: AsyncSession) -> User |
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         return None
-    if current_user.role_id == 1:
+    if current_user.role.name == "owner":
         return user
 
     # PM — verify user is in their projects
@@ -58,8 +58,8 @@ async def set_user_active(user_id: int, is_active: bool, current_user: User, db:
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         return None
-    if current_user.role_id != 1:
-        if user.created_by != current_user.id or user.role_id != 3:
+    if current_user.role.name != "owner":
+        if user.created_by != current_user.id or user.role.name != "site_worker":
             logger.warning(f"USER_ACTIVE | user_id={user_id} | attempted_by={current_user.id} | status=forbidden")
             return None
     user.is_active = is_active

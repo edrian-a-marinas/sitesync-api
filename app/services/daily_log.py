@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def get_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLog]:
     # PM — verify assigned to project
-    if current_user.role_id != 1:
+    if current_user.role.name != "owner":
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
@@ -28,7 +28,7 @@ async def get_logs(project_id: int, current_user: User, db: AsyncSession) -> lis
 
 
 async def get_log(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLog | None:
-    if current_user.role_id != 1:
+    if current_user.role.name != "owner":
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
@@ -36,7 +36,6 @@ async def get_log(project_id: int, log_id: int, current_user: User, db: AsyncSes
         ).scalar_one_or_none()
         if not assigned:
             return None
-
     return (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
 
 

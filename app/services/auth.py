@@ -19,16 +19,15 @@ async def get_role_by_name(name: str, db: AsyncSession):
 
 async def register_user(data: RegisterRequest, db: AsyncSession, request: Request, created_by: User) -> User:
     owner_role = await get_role_by_name("owner", db)
-
-    if data.role_id == owner_role.id:
+    if owner_role and data.role_id == owner_role.id:
         logger.warning(
             f"REGISTER | email={data.email} | ip={request.client.host} | created_by={created_by.id} | status=failed | reason=cannot create owner"
         )
         raise ValueError("Cannot create owner account")
 
-    project_manager_role = await get_role_by_name("project_manager", db)
+    await get_role_by_name("project_manager", db)
 
-    if created_by.role_id == project_manager_role.id:
+    if created_by.role.name == "project_manager":
         site_worker_role = await get_role_by_name("site_worker", db)
         if data.role_id != site_worker_role.id:
             logger.warning(

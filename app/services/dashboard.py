@@ -11,6 +11,7 @@ from app.models.daily_log import DailyLog
 from app.models.incident import Incident
 from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.dashboard import OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
 
@@ -61,7 +62,9 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
     over_budget = [p for p in project_summaries if p.is_over_budget]
 
     # Total active workers
-    total_workers = (await db.execute(select(func.count(User.id)).where(User.role_id == 3).where(User.is_active))).scalar() or 0
+    total_workers = (
+        await db.execute(select(func.count(User.id)).join(User.role).where(Role.name == "site_worker").where(User.is_active))
+    ).scalar() or 0
 
     # Total material cost
     total_material_cost = (await db.execute(select(func.sum(Material.total_cost)))).scalar() or 0.0
@@ -90,7 +93,7 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
     if not project:
         logger.warning(f"MANAGER_DASHBOARD | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
-    if current_user.role_id != 1:
+    if current_user.role.name != "owner":
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
