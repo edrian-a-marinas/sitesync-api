@@ -80,3 +80,18 @@ async def create_user(
 async def get_auth_token(client: AsyncClient, email: str, password: str) -> str:
     res = await client.post("/api/v1/auth/login", json={"email": email, "password": password})
     return res.json().get("access_token", "")
+
+
+async def create_daily_log(db: AsyncSession, project_id: int, submitted_by: int, log_date: str = "2026-01-01") -> "DailyLog":
+    from app.models.daily_log import DailyLog
+    from datetime import date
+    log = DailyLog(
+        project_id=project_id,
+        submitted_by=submitted_by,
+        log_date=date.fromisoformat(log_date),
+        work_accomplished="Test work",
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return log
