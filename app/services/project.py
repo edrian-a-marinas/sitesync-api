@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import get_cache, set_cache
+from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.models.project import (
     Project,
     ProjectAssignment,
@@ -41,7 +41,11 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
         )
         projects = result.scalars().all()
 
-    await set_cache(cache_key, [p.__dict__ for p in projects], PROJECTS_TTL)
+    from app.schemas.project import ProjectResponse
+    await set_cache(cache_key, [
+        ProjectResponse.model_validate(p).model_dump(mode="json")
+        for p in projects
+    ], PROJECTS_TTL)
     return projects
 
 
@@ -69,6 +73,7 @@ async def create_project(data: ProjectCreate, current_user: User, db: AsyncSessi
     db.add(project)
     await db.commit()
     await db.refresh(project)
+    await delete_pattern("projects:user:*")
     logger.info(f"PROJECT_CREATE | project_id={project.id} | owner_id={current_user.id} | status=success")
     return project
 
@@ -82,9 +87,11 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
         setattr(project, field, value)
     await db.commit()
     await db.refresh(project)
+    await delete_pattern("projects:user:*")
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache("dashboard:owner")
     logger.info(f"PROJECT_UPDATE | project_id={project_id} | updated_by={current_user.id} | status=success")
     return project
-
 
 async def assign_manager(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
     project = await get_project(project_id, current_user, db)
