@@ -33,12 +33,15 @@ API_PREFIX = "/api/v1"
 for router in all_routers:
     app.include_router(router, prefix=API_PREFIX)
 
-""" Later on redis — use lifespan.
+"""  # Later on redis — use lifespan. 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+ # put a loogger if acctualy corect  conected oand if not conencted 
     await redis_client.connect()
     yield
     await redis_client.disconnect()
+
+   
 
 app = FastAPI(**settings.app_config, lifespan=lifespan)
 """
