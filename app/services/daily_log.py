@@ -39,7 +39,15 @@ async def get_log(project_id: int, log_id: int, current_user: User, db: AsyncSes
     return (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
 
 
-async def create_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog:
+async def create_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog | None:
+    if current_user.role.name != "owner":
+        assigned = (
+            await db.execute(
+                select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not assigned:
+            return None
     log = DailyLog(**data.model_dump(), project_id=project_id, submitted_by=current_user.id)
     db.add(log)
     await db.commit()

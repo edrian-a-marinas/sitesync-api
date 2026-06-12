@@ -48,7 +48,10 @@ async def create_log_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        return await create_log(project_id, data, current_user, db)
+        log = await create_log(project_id, data, current_user, db)
+        if not log:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or access denied")
+        return log
     except IntegrityError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Log already exists for this date")
 
