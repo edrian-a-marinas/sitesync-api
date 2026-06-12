@@ -7,7 +7,7 @@ celery_app = Celery(
     "sitesync",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.report", "app.tasks.ai_query"],
+    include=["app.tasks.report", "app.tasks.ai_query", "app.tasks.ml"],
 )
 
 celery_app.conf.update(
@@ -24,6 +24,10 @@ celery_app.conf.update(
         "cleanup-old-ai-queries-daily": {
             "task": "cleanup_old_ai_queries",
             "schedule": crontab(hour=3, minute=0),
+        },
+        "retrain-ml-models-weekly": {
+            "task": "retrain_ml_models",
+            "schedule": crontab(hour=9, minute=0, day_of_week=1),
         },
     },
 )
