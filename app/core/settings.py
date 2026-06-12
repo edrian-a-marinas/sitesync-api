@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     SECRET_KEY: str
     REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CACHE_URL: str = "redis://localhost:6379/1"
     GROQ_API_KEY: str
 
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
