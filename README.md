@@ -12,6 +12,15 @@
 
 ## Full Technical Concept
 
+### AWS Services
+
+| AWS Service | Description |
+|------------|-------------|
+| **S3** | Stores photos, documents, and generated reports. |
+| **EC2** | Hosts the FastAPI application and background workers celery.  |
+| **RDS** | PostgreSQL database for all project, user, and site log data. |
+| **ALB** | Distributes traffic across multiple EC2 instances. |
+
 ### Authentication & User Layer
 
 Users register and authenticate via JWT-based auth built into FastAPI. All resources — projects, site assignments, daily logs, attendance records, material entries, reports, and AI query history — are scoped per authenticated user and role. Three roles exist: Owner (full access, cross-project visibility, AI queries, and reporting), Project Manager (assigned projects only with full log management capabilities), and Site Worker (attendance submission and site-level reporting for assigned locations only). AWS IAM manages backend cloud credentials for S3 and RDS access, enforcing least-privilege permissions at the infrastructure layer.
@@ -34,15 +43,11 @@ When a weekly progress report is requested — either manually by a Project Mana
 
 ### AI Query Layer — RAG
 
-When an Owner submits a natural language question such as "Which project consumed the most cement this month?", "Which site had the most incidents this quarter?", or "Which phase is currently most over budget?", the FastAPI endpoint forwards the request to a Celery worker through Redis. The worker retrieves relevant structured context from PostgreSQL including project budgets, attendance records, material consumption logs, daily reports, incident records, and generated reports. The worker assembles the final prompt and calls the LLM to generate a direct, data-grounded answer. Queries and responses are stored per user for historical reference. MCP exposes this backend data pipeline as a secure, open-standard interface connecting the application's structured project data to AI client ecosystems.
+When an Owner submits a natural language question such as "Which project consumed the most cement this month?", "Which site had the most incidents this quarter?", or "Which phase is currently most over budget?", the FastAPI endpoint forwards the request to a Celery worker through Redis. The worker retrieves relevant structured context from PostgreSQL including project budgets, attendance records, material consumption logs, daily reports, incident records, and generated reports. The worker assembles the final prompt and calls the LLM to generate a direct, data-grounded answer. Queries and responses are stored per user for historical reference.
 
 ### ML Analytics & Predictive Insights
 
 SiteSync runs a dedicated ML pipeline that trains predictive models on accumulated project data, serving the Owner exclusively. A budget overrun classifier, delay risk scorer, and material demand forecaster are trained on historical logs, attendance, material consumption, and budget actuals from RDS PostgreSQL — retrained automatically every week via Celery Beat. Predictive insights are surfaced on the Owner dashboard alongside standard KPIs, giving leadership forward-looking signals rather than just historical reporting.
-
-### MCP Integration
-
-The backend data pipeline is also exposed as an MCP-compatible interface, making SiteSync's structured project data accessible to external AI client ecosystems that speak the Model Context Protocol. This means the same project records, daily logs, attendance data, and report history that power the internal RAG pipeline can be consumed by any MCP-compatible AI client, enabling integrations beyond the SiteSync interface itself without requiring custom API work for each new AI tool.
 
 ### Caching
 
@@ -65,7 +70,7 @@ Next.js with TypeScript handles routing, page rendering, and application layouts
 UI/UX for roles
 All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects, the AI query panel, and the ML Analytics dashboard, the Project Manager sees only their assigned projects, and the The Site Worker sees only their assigned project, their own attendance history, and the daily log for their current shift — same interface, different world inside it. — same interface, different world inside it.
 
-### EXTRASS 
+### Role Based-Access Control 
 
 Owner — the construction company owner/CEO. The person who runs the business, owns all projects, sees everything, uses the AI assistant to make decisions. Not necessarily technical — just the boss.
 Project Manager — in construction this is typically the Civil Engineer or Site Engineer or Site Manager or Foreman. They manage the full project lifecycle, submit daily logs, monitor budget vs actual, assign workers. Could also be a Foreman in smaller firms.
