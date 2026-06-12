@@ -20,6 +20,10 @@ celery_app.conf.update(
         "weekly-report-every-monday": {
             "task": "trigger_all_weekly_reports",
             "schedule": crontab(hour=8, minute=0, day_of_week=1),
-        }
+        },
+        "cleanup-old-ai-queries-daily": {
+            "task": "cleanup_old_ai_queries",
+            "schedule": crontab(hour=3, minute=0),
+        },
     },
 )

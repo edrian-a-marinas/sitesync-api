@@ -7,6 +7,7 @@ from app.routers.equipment import router as equipment_router
 from app.routers.incident import router as incident_router
 from app.routers.material import router as material_router
 from app.routers.project import router as project_router
+from app.routers.report import router as report_router
 from app.routers.user import router as user_router
 
 all_routers = [
@@ -20,4 +21,5 @@ all_routers = [
     incident_router,
     dashboard_router,
     ai_query_router,
+    report_router,
 ]
