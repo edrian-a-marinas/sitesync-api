@@ -42,10 +42,8 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
         projects = result.scalars().all()
 
     from app.schemas.project import ProjectResponse
-    await set_cache(cache_key, [
-        ProjectResponse.model_validate(p).model_dump(mode="json")
-        for p in projects
-    ], PROJECTS_TTL)
+
+    await set_cache(cache_key, [ProjectResponse.model_validate(p).model_dump(mode="json") for p in projects], PROJECTS_TTL)
     return projects
 
 
@@ -92,6 +90,7 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
     await delete_cache("dashboard:owner")
     logger.info(f"PROJECT_UPDATE | project_id={project_id} | updated_by={current_user.id} | status=success")
     return project
+
 
 async def assign_manager(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
     project = await get_project(project_id, current_user, db)

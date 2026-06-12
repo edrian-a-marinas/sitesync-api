@@ -10,7 +10,6 @@ class Settings(BaseSettings):
     REDIS_CACHE_URL: str = "redis://localhost:6379/1"
     GROQ_API_KEY: str
 
-
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
     def SYNC_DATABASE_URL(self) -> str:
