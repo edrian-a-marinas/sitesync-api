@@ -134,6 +134,7 @@ class TestAssignManager:
 
     async def test_assign_non_manager_fails(self, client: AsyncClient, db: AsyncSession):
         owner_role = await create_role(db, "owner")
+        await create_role(db, "project_manager")
         worker_role = await create_role(db, "site_worker")
         await create_user(db, owner_role.id, email="owner@test.com")
         worker = await create_user(db, worker_role.id, email="worker@test.com")
