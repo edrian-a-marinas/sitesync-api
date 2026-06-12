@@ -1,11 +1,12 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 
 from groq import Groq
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.future import select
 
 from app.core.celery import celery_app
+from app.core.celery_db import make_celery_session
 from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.services.ai_query import retrieve_context
@@ -24,20 +25,9 @@ def process_ai_query(query_id: int):
     asyncio.run(_process_ai_query(query_id))
 
 
-def _make_session() -> async_sessionmaker:
-    engine = create_async_engine(
-        settings.DATABASE_URL,
-        pool_size=1,
-        max_overflow=0,
-        pool_pre_ping=True,
-        connect_args={"statement_cache_size": 0},
-    )
-    return async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-
-
 async def _process_ai_query(query_id: int):
     logger.info(f"AI_QUERY | query_id={query_id} | task=started")
-    async with _make_session()() as db:
+    async with make_celery_session()() as db:
         query = (await db.execute(select(AIQuery).where(AIQuery.id == query_id))).scalar_one_or_none()
         if not query:
             logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason=not found")
@@ -72,3 +62,23 @@ QUESTION: {query.question}"""
             logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason={str(e)}")
         finally:
             await db.commit()
+
+
+@celery_app.task(name="cleanup_old_ai_queries")
+def cleanup_old_ai_queries():
+    asyncio.run(_cleanup_old_ai_queries())
+
+
+async def _cleanup_old_ai_queries():
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    async with make_celery_session()() as db:
+        try:
+            result = await db.execute(select(AIQuery).where(AIQuery.created_at < cutoff))
+            old_queries = result.scalars().all()
+            count = len(old_queries)
+            for query in old_queries:
+                await db.delete(query)
+            await db.commit()
+            logger.info(f"AI_QUERY_CLEANUP | deleted={count} | cutoff={cutoff.date()}")
+        except Exception as e:
+            logger.error(f"AI_QUERY_CLEANUP | status=failed | reason={str(e)}")
