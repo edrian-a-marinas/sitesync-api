@@ -9,7 +9,6 @@ from app.core.logging import http_exception_handler, validation_exception_handle
 from app.core.settings import settings
 from app.routers import all_routers
 
-
 app = FastAPI(**settings.app_config)
 
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
@@ -23,4 +22,3 @@ API_PREFIX = "/api/v1"
 
 for router in all_routers:
     app.include_router(router, prefix=API_PREFIX)
-
