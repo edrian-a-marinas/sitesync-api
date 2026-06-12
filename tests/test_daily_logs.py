@@ -1,6 +1,7 @@
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from tests.conftest import create_role, create_user, create_daily_log, get_auth_token
+
+from tests.conftest import create_daily_log, create_role, create_user, get_auth_token
 
 PROJECT_PAYLOAD = {
     "name": "Test Project",
