@@ -4,6 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
@@ -12,8 +13,6 @@ from app.models.material import Material
 from app.models.project import Project, ProjectPhase
 from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest
-
-from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 

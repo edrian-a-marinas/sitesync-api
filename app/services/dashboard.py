@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import get_cache, set_cache
+from app.core.settings import settings
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
@@ -12,8 +13,6 @@ from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 from app.models.user import User
 from app.schemas.dashboard import OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
-
-from app.core.settings import settings
 
 logger = logging.getLogger(__name__)
 
