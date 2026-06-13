@@ -12,3 +12,13 @@ class AttendanceResponse(AttendanceCreate):
 
     class Config:
         from_attributes = True
+
+
+class AttendanceHistoryResponse(BaseModel):
+    id: int
+    daily_log_id: int
+    hours_worked: float
+    log_date: str
+
+    class Config:
+        from_attributes = True
