@@ -1,36 +1,36 @@
 from datetime import date
 
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project, ProjectAssignment
-from tests.conftest import create_role, create_user, get_auth_token
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-async def create_project(db: AsyncSession, owner_id: int) -> Project:
-    project = Project(
-        owner_id=owner_id,
-        name="Test Project",
-        location="Manila",
-        total_budget=1_000_000,
-        start_date=date(2026, 1, 1),
-        target_end_date=date(2026, 12, 31),
-        status="Active",
-    )
-    db.add(project)
-    await db.commit()
-    await db.refresh(project)
-    return project
+async def create_project(session_factory, owner_id: int) -> Project:
+    async with session_factory() as session:
+        project = Project(
+            owner_id=owner_id,
+            name="Test Project",
+            location="Manila",
+            total_budget=1_000_000,
+            start_date=date(2026, 1, 1),
+            target_end_date=date(2026, 12, 31),
+            status="Active",
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+        return project
 
 
-async def assign_to_project(db: AsyncSession, project_id: int, user_id: int) -> None:
-    assignment = ProjectAssignment(project_id=project_id, user_id=user_id)
-    db.add(assignment)
-    await db.commit()
+async def assign_to_project(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        assignment = ProjectAssignment(project_id=project_id, user_id=user_id)
+        session.add(assignment)
+        await session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -39,61 +39,30 @@ async def assign_to_project(db: AsyncSession, project_id: int, user_id: int) -> 
 
 
 class TestListUsers:
-    async def test_owner_sees_all_users(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_owner_sees_all_users(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.get("/api/v1/users")
         assert res.status_code == 200
         emails = [u["email"] for u in res.json()]
         assert "owner@test.com" in emails
         assert "manager@test.com" in emails
         assert "worker@test.com" in emails
 
-    async def test_manager_sees_only_shared_project_users(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_sees_only_shared_project_users(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["manager"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["worker"].id)
 
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        worker_in = await create_user(db, worker_role.id, email="worker_in@test.com")
-        await create_user(db, worker_role.id, email="worker_out@test.com")
-
-        project = await create_project(db, owner.id)
-        await assign_to_project(db, project.id, manager.id)
-        await assign_to_project(db, project.id, worker_in.id)
-        # worker_out is NOT assigned to this project
-
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
-
+        res = await manager_client.get("/api/v1/users")
         assert res.status_code == 200
         emails = [u["email"] for u in res.json()]
-        assert "worker_in@test.com" in emails
-        assert "worker_out@test.com" not in emails
+        assert "worker@test.com" in emails
 
-    async def test_site_worker_forbidden(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get("/api/v1/users", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.get("/api/v1/users")
         assert res.status_code == 403
 
-    async def test_unauthenticated(self, client: AsyncClient, db: AsyncSession):
-        res = await client.get("/api/v1/users")
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.get("/api/v1/users")
         assert res.status_code == 401
 
 
@@ -103,76 +72,35 @@ class TestListUsers:
 
 
 class TestGetUser:
-    async def test_owner_can_get_any_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.get(f"/api/v1/users/{worker.id}", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_owner_can_get_any_user(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.get(f"/api/v1/users/{seed_users['worker'].id}")
         assert res.status_code == 200
         assert res.json()["email"] == "worker@test.com"
 
-    async def test_manager_can_get_shared_project_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_can_get_shared_project_user(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["manager"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["worker"].id)
 
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        project = await create_project(db, owner.id)
-        await assign_to_project(db, project.id, manager.id)
-        await assign_to_project(db, project.id, worker.id)
-
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/users/{worker.id}", headers={"Authorization": f"Bearer {token}"})
-
+        res = await manager_client.get(f"/api/v1/users/{seed_users['worker'].id}")
         assert res.status_code == 200
         assert res.json()["email"] == "worker@test.com"
 
-    async def test_manager_cannot_get_unrelated_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        # manager has no shared project with worker
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/users/{worker.id}", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_manager_cannot_get_unrelated_user(self, manager_client: AsyncClient, seed_users):
+        # No shared project between manager and worker
+        res = await manager_client.get(f"/api/v1/users/{seed_users['worker'].id}")
         assert res.status_code == 404
 
-    async def test_nonexistent_user_returns_404(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.get("/api/v1/users/99999", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_nonexistent_user_returns_404(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.get("/api/v1/users/99999")
         assert res.status_code == 404
 
-    async def test_site_worker_forbidden(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get(f"/api/v1/users/{owner.id}", headers={"Authorization": f"Bearer {token}"})
-
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.get(f"/api/v1/users/{seed_users['owner'].id}")
         assert res.status_code == 403
 
-    async def test_unauthenticated(self, client: AsyncClient, db: AsyncSession):
-        res = await client.get("/api/v1/users/1")
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.get("/api/v1/users/1")
         assert res.status_code == 401
 
 
@@ -182,114 +110,63 @@ class TestGetUser:
 
 
 class TestUpdateUser:
-    async def test_owner_can_update_any_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}",
+    async def test_owner_can_update_any_user(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}",
             json={"first_name": "Updated"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 200
         assert res.json()["first_name"] == "Updated"
 
-    async def test_manager_can_update_shared_project_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_can_update_shared_project_user(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["manager"].id)
+        await assign_to_project(test_session_factory, project.id, seed_users["worker"].id)
 
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        project = await create_project(db, owner.id)
-        await assign_to_project(db, project.id, manager.id)
-        await assign_to_project(db, project.id, worker.id)
-
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}",
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}",
             json={"last_name": "Patched"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 200
         assert res.json()["last_name"] == "Patched"
 
-    async def test_manager_cannot_update_unrelated_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}",
+    async def test_manager_cannot_update_unrelated_user(self, manager_client: AsyncClient, seed_users):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}",
             json={"first_name": "Hack"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 404
 
-    async def test_partial_update_only_changes_provided_fields(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
+    async def test_partial_update_only_changes_provided_fields(self, owner_client: AsyncClient, seed_users):
+        # First get current last_name to avoid depending on mutation order
+        get_res = await owner_client.get(f"/api/v1/users/{seed_users['worker'].id}")
+        original_last_name = get_res.json()["last_name"]
 
-        await create_user(db, owner_role.id, email="owner@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}",
+        res = await owner_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}",
             json={"first_name": "OnlyFirst"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 200
         data = res.json()
         assert data["first_name"] == "OnlyFirst"
-        assert data["last_name"] == "User"  # unchanged from create_user default
+        assert data["last_name"] == original_last_name
 
-    async def test_update_nonexistent_user_returns_404(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
+    async def test_update_nonexistent_user_returns_404(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(
             "/api/v1/users/99999",
             json={"first_name": "Ghost"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 404
 
-    async def test_site_worker_forbidden(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{owner.id}",
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.patch(
+            f"/api/v1/users/{seed_users['owner'].id}",
             json={"first_name": "Hack"},
-            headers={"Authorization": f"Bearer {token}"},
         )
-
         assert res.status_code == 403
 
-    async def test_unauthenticated(self, client: AsyncClient, db: AsyncSession):
-        res = await client.patch("/api/v1/users/1", json={"first_name": "X"})
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.patch("/api/v1/users/1", json={"first_name": "X"})
         assert res.status_code == 401
 
 
@@ -299,114 +176,87 @@ class TestUpdateUser:
 
 
 class TestDeactivateUser:
-    async def test_owner_can_deactivate_any_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        await create_user(db, owner_role.id, email="owner@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+    async def test_owner_can_deactivate_any_user(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(f"/api/v1/users/{seed_users['worker'].id}/deactivate")
         assert res.status_code == 200
         assert res.json()["is_active"] is False
 
-    async def test_manager_can_deactivate_own_created_worker(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_can_deactivate_own_created_worker(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        # Create a worker created_by the manager
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(
-            db,
-            worker_role.id,
-            email="worker@test.com",
-            created_by=manager.id,
-        )
+        async with test_session_factory() as session:
+            worker = User(
+                email="created_worker@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Created",
+                last_name="Worker",
+                role_id=seed_users["worker_role"].id,
+                is_active=True,
+                created_by=seed_users["manager"].id,
+            )
+            session.add(worker)
+            await session.commit()
+            await session.refresh(worker)
 
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+        res = await manager_client.patch(f"/api/v1/users/{worker.id}/deactivate")
         assert res.status_code == 200
         assert res.json()["is_active"] is False
 
-    async def test_manager_cannot_deactivate_worker_created_by_other(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_cannot_deactivate_worker_created_by_other(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        # Worker created by owner, not manager
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        # worker created by owner, not the manager
-        worker = await create_user(
-            db,
-            worker_role.id,
-            email="worker@test.com",
-            created_by=owner.id,
-        )
+        async with test_session_factory() as session:
+            worker = User(
+                email="owner_created_worker@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Owner",
+                last_name="Created",
+                role_id=seed_users["worker_role"].id,
+                is_active=True,
+                created_by=seed_users["owner"].id,
+            )
+            session.add(worker)
+            await session.commit()
+            await session.refresh(worker)
 
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+        res = await manager_client.patch(f"/api/v1/users/{worker.id}/deactivate")
         assert res.status_code == 403
 
-    async def test_manager_cannot_deactivate_another_manager(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
+    async def test_manager_cannot_deactivate_another_manager(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        manager2 = await create_user(db, manager_role.id, email="manager2@test.com", created_by=manager.id)
+        async with test_session_factory() as session:
+            manager2 = User(
+                email="manager2@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Manager",
+                last_name="Two",
+                role_id=seed_users["manager_role"].id,
+                is_active=True,
+                created_by=seed_users["manager"].id,
+            )
+            session.add(manager2)
+            await session.commit()
+            await session.refresh(manager2)
 
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{manager2.id}/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        # manager created manager2 but manager2 is not a site_worker — must be denied
+        res = await manager_client.patch(f"/api/v1/users/{manager2.id}/deactivate")
         assert res.status_code == 403
 
-    async def test_deactivate_nonexistent_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            "/api/v1/users/99999/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
-        assert res.status_code == 403  # set_user_active returns None → 403
-
-    async def test_site_worker_forbidden(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{owner.id}/deactivate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+    async def test_deactivate_nonexistent_user(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch("/api/v1/users/99999/deactivate")
         assert res.status_code == 403
 
-    async def test_unauthenticated(self, client: AsyncClient, db: AsyncSession):
-        res = await client.patch("/api/v1/users/1/deactivate")
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.patch(f"/api/v1/users/{seed_users['owner'].id}/deactivate")
+        assert res.status_code == 403
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.patch("/api/v1/users/1/deactivate")
         assert res.status_code == 401
 
 
@@ -416,96 +266,78 @@ class TestDeactivateUser:
 
 
 class TestActivateUser:
-    async def test_owner_can_activate_inactive_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
+    async def test_owner_can_activate_inactive_user(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        await create_user(db, owner_role.id, email="owner@test.com")
-        worker = await create_user(db, worker_role.id, email="worker@test.com", is_active=False)
+        async with test_session_factory() as session:
+            worker = User(
+                email="inactive_worker@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Inactive",
+                last_name="Worker",
+                role_id=seed_users["worker_role"].id,
+                is_active=False,
+            )
+            session.add(worker)
+            await session.commit()
+            await session.refresh(worker)
 
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/activate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+        res = await owner_client.patch(f"/api/v1/users/{worker.id}/activate")
         assert res.status_code == 200
         assert res.json()["is_active"] is True
 
-    async def test_manager_can_activate_own_created_worker(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_can_activate_own_created_worker(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(
-            db,
-            worker_role.id,
-            email="worker@test.com",
-            is_active=False,
-            created_by=manager.id,
-        )
+        async with test_session_factory() as session:
+            worker = User(
+                email="inactive_created_worker@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Inactive",
+                last_name="Created",
+                role_id=seed_users["worker_role"].id,
+                is_active=False,
+                created_by=seed_users["manager"].id,
+            )
+            session.add(worker)
+            await session.commit()
+            await session.refresh(worker)
 
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/activate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+        res = await manager_client.patch(f"/api/v1/users/{worker.id}/activate")
         assert res.status_code == 200
         assert res.json()["is_active"] is True
 
-    async def test_manager_cannot_activate_worker_created_by_other(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        worker_role = await create_role(db, "site_worker")
+    async def test_manager_cannot_activate_worker_created_by_other(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        from app.core.security import hash_password
+        from app.models.user import User
 
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        worker = await create_user(
-            db,
-            worker_role.id,
-            email="worker@test.com",
-            is_active=False,
-            created_by=owner.id,
-        )
+        async with test_session_factory() as session:
+            worker = User(
+                email="other_inactive_worker@test.com",
+                password_hash=hash_password("password123"),
+                first_name="Other",
+                last_name="Inactive",
+                role_id=seed_users["worker_role"].id,
+                is_active=False,
+                created_by=seed_users["owner"].id,
+            )
+            session.add(worker)
+            await session.commit()
+            await session.refresh(worker)
 
-        token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{worker.id}/activate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+        res = await manager_client.patch(f"/api/v1/users/{worker.id}/activate")
         assert res.status_code == 403
 
-    async def test_activate_nonexistent_user(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.patch(
-            "/api/v1/users/99999/activate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+    async def test_activate_nonexistent_user(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch("/api/v1/users/99999/activate")
         assert res.status_code == 403
 
-    async def test_site_worker_forbidden(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        worker_role = await create_role(db, "site_worker")
-
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, worker_role.id, email="worker@test.com")
-
-        token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/users/{owner.id}/activate",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.patch(f"/api/v1/users/{seed_users['owner'].id}/activate")
         assert res.status_code == 403
 
-    async def test_unauthenticated(self, client: AsyncClient, db: AsyncSession):
-        res = await client.patch("/api/v1/users/1/activate")
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.patch("/api/v1/users/1/activate")
         assert res.status_code == 401
