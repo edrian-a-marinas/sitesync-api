@@ -48,7 +48,7 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
     return projects
 
 
-async def get_project(project_id: int, current_user: User, db: AsyncSession) -> Project | None:
+async def get_project_by_id(project_id: int, current_user: User, db: AsyncSession) -> Project | None:
     project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
     if not project:
         logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
@@ -94,7 +94,7 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
 
 
 async def assign_manager(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
-    project = await get_project(project_id, current_user, db)
+    project = await get_project_by_id(project_id, current_user, db)
     if not project:
         return None
 
@@ -115,7 +115,7 @@ async def assign_manager(project_id: int, data: AssignUserRequest, current_user:
 
 
 async def assign_worker(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> WorkerAssignment | None:
-    project = await get_project(project_id, current_user, db)
+    project = await get_project_by_id(project_id, current_user, db)
     if not project:
         return None
 
@@ -136,7 +136,7 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
 
 
 async def create_phase(project_id: int, data: PhaseCreate, current_user: User, db: AsyncSession) -> ProjectPhase | None:
-    project = await get_project(project_id, current_user, db)
+    project = await get_project_by_id(project_id, current_user, db)
     if not project:
         return None
     phase = ProjectPhase(**data.model_dump(), project_id=project_id)
@@ -148,7 +148,7 @@ async def create_phase(project_id: int, data: PhaseCreate, current_user: User, d
 
 
 async def update_phase(project_id: int, phase_id: int, data: PhaseUpdate, current_user: User, db: AsyncSession) -> ProjectPhase | None:
-    project = await get_project(project_id, current_user, db)
+    project = await get_project_by_id(project_id, current_user, db)
     if not project:
         return None
     phase = (

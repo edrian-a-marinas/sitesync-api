@@ -24,7 +24,7 @@ async def get_users(current_user: User, db: AsyncSession) -> list[User]:
     return result.scalars().unique().all()
 
 
-async def get_user(user_id: int, current_user: User, db: AsyncSession) -> User | None:
+async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> User | None:
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         return None
@@ -42,8 +42,8 @@ async def get_user(user_id: int, current_user: User, db: AsyncSession) -> User |
     return user if in_project else None
 
 
-async def update_user(user_id: int, data: UserUpdateRequest, current_user: User, db: AsyncSession) -> User | None:
-    user = await get_user(user_id, current_user, db)
+async def update_user_by_id(user_id: int, data: UserUpdateRequest, current_user: User, db: AsyncSession) -> User | None:
+    user = await get_user_by_id(user_id, current_user, db)
     if not user:
         return None
     for field, value in data.model_dump(exclude_none=True).items():
@@ -54,7 +54,7 @@ async def update_user(user_id: int, data: UserUpdateRequest, current_user: User,
     return user
 
 
-async def set_user_active(user_id: int, is_active: bool, current_user: User, db: AsyncSession) -> User | None:
+async def set_user_status(user_id: int, is_active: bool, current_user: User, db: AsyncSession) -> User | None:
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         return None

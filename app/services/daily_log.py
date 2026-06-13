@@ -12,7 +12,7 @@ from app.schemas.daily_log import DailyLogCreate, DailyLogUpdate
 logger = logging.getLogger(__name__)
 
 
-async def get_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLog]:
+async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLog]:
     # PM — verify assigned to project
     if current_user.role.name != "owner":
         assigned = (
@@ -27,7 +27,7 @@ async def get_logs(project_id: int, current_user: User, db: AsyncSession) -> lis
     return result.scalars().all()
 
 
-async def get_log(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLog | None:
+async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLog | None:
     if current_user.role.name != "owner":
         assigned = (
             await db.execute(
@@ -39,7 +39,7 @@ async def get_log(project_id: int, log_id: int, current_user: User, db: AsyncSes
     return (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
 
 
-async def create_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog | None:
+async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog | None:
     if current_user.role.name != "owner":
         assigned = (
             await db.execute(
@@ -58,8 +58,8 @@ async def create_log(project_id: int, data: DailyLogCreate, current_user: User, 
     return log
 
 
-async def update_log(project_id: int, log_id: int, data: DailyLogUpdate, current_user: User, db: AsyncSession) -> DailyLog | None:
-    log = await get_log(project_id, log_id, current_user, db)
+async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, current_user: User, db: AsyncSession) -> DailyLog | None:
+    log = await get_daily_log_by_id(project_id, log_id, current_user, db)
     if not log:
         return None
     for field, value in data.model_dump(exclude_none=True).items():

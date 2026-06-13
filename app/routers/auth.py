@@ -6,20 +6,25 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
-from app.services.auth import login_user, register_user
+from app.services.auth import (
+    login_user as _login_user,
+)
+from app.services.auth import (
+    register_user as _register_user,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
-async def login(
+async def login_user(
     request: Request,
     data: LoginRequest,
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        token = await login_user(data, db, request)
+        token = await _login_user(data, db, request)
         return TokenResponse(access_token=token)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
@@ -27,14 +32,14 @@ async def login(
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
-async def register(
+async def register_user(
     data: RegisterRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_owner_or_manager),
 ):
     try:
-        user = await register_user(data, db, request, created_by=current_user)
+        user = await _register_user(data, db, request, created_by=current_user)
         return user
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))

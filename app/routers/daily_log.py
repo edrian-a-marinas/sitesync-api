@@ -7,20 +7,31 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogResponse, DailyLogUpdate
-from app.services.daily_log import create_log, get_log, get_logs, update_log
+from app.services.daily_log import (
+    create_daily_log as _create_daily_log,
+)
+from app.services.daily_log import (
+    get_daily_log_by_id as _get_daily_log_by_id,
+)
+from app.services.daily_log import (
+    get_daily_logs as _get_daily_logs,
+)
+from app.services.daily_log import (
+    update_daily_log as _update_daily_log,
+)
 
 router = APIRouter(prefix="/projects/{project_id}/daily-logs", tags=["Daily Logs"])
 
 
 @router.get("", response_model=list[DailyLogResponse])
 @limiter.limit("30/minute")
-async def list_logs(
+async def get_daily_logs(
     project_id: int,
     request: Request,
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_logs(project_id, current_user, db)
+    return await _get_daily_logs(project_id, current_user, db)
 
 
 @router.get("/{log_id}", response_model=DailyLogResponse)
@@ -32,7 +43,7 @@ async def get_log_by_id(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    log = await get_log(project_id, log_id, current_user, db)
+    log = await _get_daily_log_by_id(project_id, log_id, current_user, db)
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log not found")
     return log
@@ -40,7 +51,7 @@ async def get_log_by_id(
 
 @router.post("", response_model=DailyLogResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
-async def create_log_endpoint(
+async def create_daily_log(
     project_id: int,
     data: DailyLogCreate,
     request: Request,
@@ -48,7 +59,7 @@ async def create_log_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        log = await create_log(project_id, data, current_user, db)
+        log = await _create_daily_log(project_id, data, current_user, db)
         if not log:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found or access denied")
         return log
@@ -58,7 +69,7 @@ async def create_log_endpoint(
 
 @router.patch("/{log_id}", response_model=DailyLogResponse)
 @limiter.limit("20/minute")
-async def update_log_endpoint(
+async def update_daily_log(
     project_id: int,
     log_id: int,
     data: DailyLogUpdate,
@@ -66,7 +77,7 @@ async def update_log_endpoint(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    log = await update_log(project_id, log_id, data, current_user, db)
+    log = await _update_daily_log(project_id, log_id, data, current_user, db)
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Log not found")
     return log

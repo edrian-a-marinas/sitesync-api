@@ -26,7 +26,6 @@ async def register_user(data: RegisterRequest, db: AsyncSession, request: Reques
         raise ValueError("Cannot create owner account")
 
     await get_role_by_name("project_manager", db)
-
     if created_by.role.name == "project_manager":
         site_worker_role = await get_role_by_name("site_worker", db)
         if data.role_id != site_worker_role.id:
