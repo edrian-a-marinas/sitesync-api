@@ -164,8 +164,8 @@ class TestGetReports:
 
         assert res.status_code == 200
         assert len(res.json()) == 2
-        # newest first — week_start 2026-01-08 should come before 2026-01-01
-        assert res.json()[0]["week_start"] > res.json()[1]["week_start"]
+        dates = [r["week_start"] for r in res.json()]
+        assert dates == sorted(dates, reverse=True)
 
     async def test_no_reports_returns_empty_list(self, owner_client: AsyncClient, seed_users, test_session_factory):
         project = await create_project(test_session_factory, seed_users["owner"].id)
