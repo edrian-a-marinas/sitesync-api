@@ -117,3 +117,11 @@ async def create_daily_log(db: AsyncSession, project_id: int, submitted_by: int,
     await db.commit()
     await db.refresh(log)
     return log
+
+
+async def create_worker_assignment(db: AsyncSession, project_id: int, user_id: int):
+    from app.models.project import WorkerAssignment
+
+    assignment = WorkerAssignment(project_id=project_id, user_id=user_id)
+    db.add(assignment)
+    await db.commit()
