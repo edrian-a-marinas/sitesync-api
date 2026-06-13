@@ -1,331 +1,319 @@
+from datetime import date
+
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
-from app.models.role import Role
-from tests.conftest import (
-    create_daily_log,
-    create_role,
-    create_user,
-    create_worker_assignment,
-    get_auth_token,
-)
+from app.models.daily_log import DailyLog
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
 
-PROJECT_PAYLOAD = {
-    "name": "Material Test Project",
-    "location": "Manila",
-    "total_budget": 1000000.0,
-    "start_date": "2026-01-01",
-    "target_end_date": "2026-12-31",
-    "status": "Active",
-}
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def material_url(project_id: int, log_id: int) -> str:
+    return f"/api/v1/projects/{project_id}/daily-logs/{log_id}/materials"
+
+
+def material_detail_url(project_id: int, log_id: int, material_id: int) -> str:
+    return f"/api/v1/projects/{project_id}/daily-logs/{log_id}/materials/{material_id}"
+
+
+async def create_project(session_factory, owner_id: int) -> Project:
+    async with session_factory() as session:
+        project = Project(
+            owner_id=owner_id,
+            name="Material Test Project",
+            location="Manila",
+            total_budget=1_000_000,
+            start_date=date(2026, 1, 1),
+            target_end_date=date(2026, 12, 31),
+            status="Active",
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+        return project
+
+
+async def create_daily_log(session_factory, project_id: int, submitted_by: int) -> DailyLog:
+    async with session_factory() as session:
+        log = DailyLog(
+            project_id=project_id,
+            submitted_by=submitted_by,
+            log_date=date(2026, 1, 1),
+            work_accomplished="Test work",
+        )
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+        return log
+
+
+async def assign_manager(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        session.add(ProjectAssignment(project_id=project_id, user_id=user_id))
+        await session.commit()
+
+
+async def assign_worker(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        session.add(WorkerAssignment(project_id=project_id, user_id=user_id))
+        await session.commit()
+
+
+async def create_material_in_db(session_factory, log_id: int) -> int:
+    from app.models.material import Material
+
+    async with session_factory() as session:
+        material = Material(
+            daily_log_id=log_id,
+            name="Cement",
+            quantity=10.0,
+            unit="bags",
+            unit_cost=250.0,
+        )
+        session.add(material)
+        await session.commit()
+        await session.refresh(material)
+        return material.id
+
 
 MATERIAL_PAYLOAD = {
     "name": "Cement",
-    "quantity": 50.0,
+    "quantity": 10.0,
     "unit": "bags",
-    "unit_cost": 280.0,
+    "unit_cost": 250.0,
 }
 
 MATERIAL_UPDATE_PAYLOAD = {
-    "quantity": 75.0,
+    "quantity": 20.0,
+    "unit_cost": 300.0,
 }
 
 
 # ---------------------------------------------------------------------------
-# Shared setup helper
+# GET /materials  (list)
 # ---------------------------------------------------------------------------
 
 
-async def setup_project_with_manager_and_worker(client: AsyncClient, db: AsyncSession):
-    owner_role = await create_role(db, "owner")
-    manager_role = await create_role(db, "project_manager")
-    worker_role = await create_role(db, "site_worker")
+class TestGetMaterials:
+    async def test_owner_can_list_materials(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
-    owner = await create_user(db, owner_role.id, email="owner@test.com")
-    manager = await create_user(db, manager_role.id, email="manager@test.com")
-    worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-    owner_token = await get_auth_token(client, "owner@test.com", "password123")
-
-    res = await client.post(
-        "/api/v1/projects",
-        json=PROJECT_PAYLOAD,
-        headers={"Authorization": f"Bearer {owner_token}"},
-    )
-    project_id = res.json()["id"]
-
-    await client.post(
-        f"/api/v1/projects/{project_id}/assign-manager",
-        json={"user_id": manager.id},
-        headers={"Authorization": f"Bearer {owner_token}"},
-    )
-
-    manager_token = await get_auth_token(client, "manager@test.com", "password123")
-    log = await create_daily_log(db, project_id, owner.id, "2026-01-01")
-
-    return {
-        "owner": owner,
-        "owner_token": owner_token,
-        "manager": manager,
-        "manager_token": manager_token,
-        "worker": worker,
-        "project_id": project_id,
-        "log_id": log.id,
-    }
-
-
-# ---------------------------------------------------------------------------
-# List Materials
-# ---------------------------------------------------------------------------
-
-
-class TestMaterialList:
-    async def test_owner_can_list_materials(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+        res = await owner_client.get(material_url(project.id, log.id))
 
         assert res.status_code == 200
         assert len(res.json()) == 1
         assert res.json()[0]["name"] == "Cement"
 
-    async def test_assigned_manager_can_list_materials(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_manager_can_list_materials(self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
-        )
+        res = await manager_client.get(material_url(project.id, log.id))
 
         assert res.status_code == 200
         assert len(res.json()) == 1
 
-    async def test_assigned_worker_can_list_materials(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
+    async def test_assigned_worker_can_list_materials(self, owner_client: AsyncClient, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+        await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            headers={"Authorization": f"Bearer {worker_token}"},
-        )
+        res = await worker_client.get(material_url(project.id, log.id))
 
         assert res.status_code == 200
         assert len(res.json()) == 1
 
-    async def test_unassigned_worker_gets_empty_list(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        # Worker not assigned to project
+    async def test_unassigned_worker_gets_empty_list(self, owner_client: AsyncClient, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        # worker NOT assigned via WorkerAssignment
+        await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            headers={"Authorization": f"Bearer {worker_token}"},
-        )
+        res = await worker_client.get(material_url(project.id, log.id))
 
         assert res.status_code == 200
         assert res.json() == []
 
-    async def test_unauthenticated_cannot_list(self, client: AsyncClient, db: AsyncSession):
-        res = await client.get("/api/v1/projects/1/daily-logs/1/materials")
+    async def test_unauthenticated_cannot_list(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await unauth_client.get(material_url(project.id, log.id))
+
         assert res.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# Create Material
+# POST /materials  (create)
 # ---------------------------------------------------------------------------
 
 
-class TestMaterialCreate:
-    async def test_owner_can_create_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+class TestCreateMaterial:
+    async def test_owner_can_create_material(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
 
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+        res = await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
+
+        assert res.status_code == 201
+        data = res.json()
+        assert data["name"] == "Cement"
+        assert data["daily_log_id"] == log.id
+        assert data["total_cost"] == 2500.0  # 10 * 250
+
+    async def test_assigned_manager_can_create_material(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+
+        res = await manager_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
         assert res.status_code == 201
         assert res.json()["name"] == "Cement"
-        assert res.json()["daily_log_id"] == ctx["log_id"]
 
-    async def test_assigned_manager_can_create_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_unassigned_manager_cannot_create_material(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        # manager NOT assigned to this project
 
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
-        )
+        res = await manager_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
+
+        assert res.status_code == 403
+
+    async def test_total_cost_is_computed_correctly(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        payload = {"name": "Steel", "quantity": 5.0, "unit": "bars", "unit_cost": 400.0}
+        res = await owner_client.post(material_url(project.id, log.id), json=payload)
 
         assert res.status_code == 201
-        assert res.json()["daily_log_id"] == ctx["log_id"]
+        assert res.json()["total_cost"] == 2000.0  # 5 * 400
 
-    async def test_unassigned_manager_cannot_create_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_site_worker_cannot_create_material(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
 
-        manager_role = (await db.execute(select(Role).where(Role.name == "project_manager"))).scalar_one()
-        await create_user(db, manager_role.id, email="manager2@test.com")
-        unassigned_token = await get_auth_token(client, "manager2@test.com", "password123")
-
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {unassigned_token}"},
-        )
+        res = await worker_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
         assert res.status_code == 403
 
-    async def test_worker_cannot_create_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
+    async def test_unauthenticated_cannot_create(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
 
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {worker_token}"},
-        )
+        res = await unauth_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
 
-        assert res.status_code == 403
-
-    async def test_unauthenticated_cannot_create(self, client: AsyncClient, db: AsyncSession):
-        res = await client.post(
-            "/api/v1/projects/1/daily-logs/1/materials",
-            json=MATERIAL_PAYLOAD,
-        )
         assert res.status_code == 401
 
 
 # ---------------------------------------------------------------------------
-# Update Material
+# PATCH /materials/{material_id}  (update)
 # ---------------------------------------------------------------------------
 
 
-class TestMaterialUpdate:
-    async def test_owner_can_update_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-
-        create_res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+class TestUpdateMaterial:
+    async def test_owner_can_update_material(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        create_res = await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
         material_id = create_res.json()["id"]
 
-        res = await client.patch(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials/{material_id}",
+        res = await owner_client.patch(
+            material_detail_url(project.id, log.id, material_id),
             json=MATERIAL_UPDATE_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
         )
 
         assert res.status_code == 200
-        assert float(res.json()["quantity"]) == 75.0
+        data = res.json()
+        assert data["quantity"] == 20.0
+        assert data["unit_cost"] == 300.0
+        assert data["total_cost"] == 6000.0  # 20 * 300
 
-    async def test_assigned_manager_can_update_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-
-        create_res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+    async def test_assigned_manager_can_update_material(
+        self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory
+    ):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        create_res = await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
         material_id = create_res.json()["id"]
 
-        res = await client.patch(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials/{material_id}",
+        res = await manager_client.patch(
+            material_detail_url(project.id, log.id, material_id),
             json=MATERIAL_UPDATE_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
         )
 
         assert res.status_code == 200
-        assert float(res.json()["quantity"]) == 75.0
+        assert res.json()["quantity"] == 20.0
 
-    async def test_unassigned_manager_cannot_update_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_unassigned_manager_cannot_update_material(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        material_id = await create_material_in_db(test_session_factory, log.id)
 
-        create_res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-        material_id = create_res.json()["id"]
-
-        manager_role = (await db.execute(select(Role).where(Role.name == "project_manager"))).scalar_one()
-        await create_user(db, manager_role.id, email="manager2@test.com")
-        unassigned_token = await get_auth_token(client, "manager2@test.com", "password123")
-
-        res = await client.patch(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials/{material_id}",
+        res = await manager_client.patch(
+            material_detail_url(project.id, log.id, material_id),
             json=MATERIAL_UPDATE_PAYLOAD,
-            headers={"Authorization": f"Bearer {unassigned_token}"},
         )
 
         assert res.status_code == 403
 
-    async def test_update_material_not_found(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_update_nonexistent_material_returns_404(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
 
-        res = await client.patch(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials/99999",
+        res = await owner_client.patch(
+            material_detail_url(project.id, log.id, 99999),
             json=MATERIAL_UPDATE_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
         )
 
         assert res.status_code == 404
 
-    async def test_worker_cannot_update_material(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        create_res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials",
-            json=MATERIAL_PAYLOAD,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+    async def test_partial_update_only_changes_provided_fields(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        create_res = await owner_client.post(material_url(project.id, log.id), json=MATERIAL_PAYLOAD)
         material_id = create_res.json()["id"]
 
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/materials/{material_id}",
+        res = await owner_client.patch(
+            material_detail_url(project.id, log.id, material_id),
+            json={"quantity": 50.0},
+        )
+
+        assert res.status_code == 200
+        data = res.json()
+        assert data["quantity"] == 50.0
+        assert data["unit_cost"] == 250.0  # unchanged
+        assert data["name"] == "Cement"  # unchanged
+        assert data["total_cost"] == 12500.0  # 50 * 250
+
+    async def test_site_worker_cannot_update_material(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        material_id = await create_material_in_db(test_session_factory, log.id)
+
+        res = await worker_client.patch(
+            material_detail_url(project.id, log.id, material_id),
             json=MATERIAL_UPDATE_PAYLOAD,
-            headers={"Authorization": f"Bearer {worker_token}"},
         )
 
         assert res.status_code == 403
 
-    async def test_unauthenticated_cannot_update(self, client: AsyncClient, db: AsyncSession):
-        res = await client.patch(
-            "/api/v1/projects/1/daily-logs/1/materials/1",
+    async def test_unauthenticated_cannot_update(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await unauth_client.patch(
+            material_detail_url(project.id, log.id, 1),
             json=MATERIAL_UPDATE_PAYLOAD,
         )
+
         assert res.status_code == 401
