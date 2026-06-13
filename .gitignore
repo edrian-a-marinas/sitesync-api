@@ -220,3 +220,5 @@ reports/
 
 
 app/ml/models/*.joblib
+
+.pre-commit-cache/
