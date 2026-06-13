@@ -1,10 +1,11 @@
-from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import date
 
-from tests.conftest import create_daily_log, create_role, create_user, get_auth_token
+from httpx import AsyncClient
+
+from app.models.project import Project, ProjectAssignment
 
 PROJECT_PAYLOAD = {
-    "name": "Test Project",
+    "name": "Daily Log Test Project",
     "location": "Manila",
     "total_budget": 1000000.0,
     "start_date": "2026-01-01",
@@ -14,226 +15,310 @@ PROJECT_PAYLOAD = {
 
 LOG_PAYLOAD = {
     "log_date": "2026-01-01",
-    "work_accomplished": "Poured concrete",
+    "work_accomplished": "Poured concrete for foundation.",
     "weather_condition": "Sunny",
-    "notes": "No issues",
+    "notes": "No issues.",
+}
+
+LOG_UPDATE_PAYLOAD = {
+    "work_accomplished": "Updated work accomplished.",
 }
 
 
-async def setup_owner_and_project(client: AsyncClient, db: AsyncSession):
-    owner_role = await create_role(db, "owner")
-    owner = await create_user(db, owner_role.id, email="owner@test.com")
-    token = await get_auth_token(client, "owner@test.com", "password123")
-    res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-    project_id = res.json()["id"]
-    return owner, token, project_id
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 
-async def setup_manager_assigned(client: AsyncClient, db: AsyncSession, owner_token: str, project_id: int, db_session: AsyncSession):
-    manager_role = await create_role(db_session, "project_manager")
-    manager = await create_user(db_session, manager_role.id, email="manager@test.com")
-    await client.post(
-        f"/api/v1/projects/{project_id}/assign-manager",
-        json={"user_id": manager.id},
-        headers={"Authorization": f"Bearer {owner_token}"},
-    )
-    manager_token = await get_auth_token(client, "manager@test.com", "password123")
-    return manager, manager_token
-
-
-class TestDailyLogCreate:
-    async def test_owner_can_create(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        res = await client.post(f"/api/v1/projects/{project_id}/daily-logs", json=LOG_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 201
-        assert res.json()["work_accomplished"] == "Poured concrete"
-
-    async def test_manager_can_create_on_assigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        await client.post(
-            f"/api/v1/projects/{project_id}/assign-manager",
-            json={"user_id": manager.id},
-            headers={"Authorization": f"Bearer {owner_token}"},
+async def create_project(session_factory, owner_id: int) -> Project:
+    async with session_factory() as session:
+        project = Project(
+            owner_id=owner_id,
+            name="Daily Log Test Project",
+            location="Manila",
+            total_budget=1_000_000,
+            start_date=date(2026, 1, 1),
+            target_end_date=date(2026, 12, 31),
+            status="Active",
         )
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.post(f"/api/v1/projects/{project_id}/daily-logs", json=LOG_PAYLOAD, headers={"Authorization": f"Bearer {manager_token}"})
-        assert res.status_code == 201
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+        return project
 
-    async def test_manager_cannot_create_on_unassigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.post(f"/api/v1/projects/{project_id}/daily-logs", json=LOG_PAYLOAD, headers={"Authorization": f"Bearer {manager_token}"})
-        assert res.status_code == 404
 
-    async def test_unauthenticated_cannot_create(self, client: AsyncClient, db: AsyncSession):
-        res = await client.post("/api/v1/projects/1/daily-logs", json=LOG_PAYLOAD)
-        assert res.status_code == 401
+async def assign_manager(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        assignment = ProjectAssignment(project_id=project_id, user_id=user_id)
+        session.add(assignment)
+        await session.commit()
+
+
+async def create_log(session_factory, project_id: int, submitted_by: int) -> int:
+    from app.models.daily_log import DailyLog
+
+    async with session_factory() as session:
+        log = DailyLog(
+            project_id=project_id,
+            submitted_by=submitted_by,
+            log_date=date(2026, 1, 1),
+            work_accomplished="Test work",
+        )
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+        return log.id
+
+
+# ---------------------------------------------------------------------------
+# List Daily Logs
+# ---------------------------------------------------------------------------
 
 
 class TestDailyLogList:
-    async def test_owner_sees_all_logs(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        await create_daily_log(db, project_id, owner.id, "2026-01-01")
-        await create_daily_log(db, project_id, owner.id, "2026-01-02")
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs", headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 200
-        assert len(res.json()) == 2
+    async def test_owner_can_list_logs(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
 
-    async def test_manager_sees_logs_on_assigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        await client.post(
-            f"/api/v1/projects/{project_id}/assign-manager",
-            json={"user_id": manager.id},
-            headers={"Authorization": f"Bearer {owner_token}"},
+        await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
         )
-        await create_daily_log(db, project_id, owner.id, "2026-01-01")
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs", headers={"Authorization": f"Bearer {manager_token}"})
+
+        res = await owner_client.get(f"/api/v1/projects/{project.id}/daily-logs")
         assert res.status_code == 200
         assert len(res.json()) == 1
 
-    async def test_manager_gets_empty_on_unassigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        await create_daily_log(db, project_id, owner.id, "2026-01-01")
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs", headers={"Authorization": f"Bearer {manager_token}"})
+    async def test_assigned_manager_can_list_logs(self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+
+        await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+
+        res = await manager_client.get(f"/api/v1/projects/{project.id}/daily-logs")
         assert res.status_code == 200
-        assert len(res.json()) == 0
+        assert len(res.json()) == 1
+
+    async def test_unassigned_manager_gets_empty_list(self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+
+        res = await manager_client.get(f"/api/v1/projects/{project.id}/daily-logs")
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_worker_cannot_list_logs(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs")
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_list(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await unauth_client.get(f"/api/v1/projects/{project.id}/daily-logs")
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Get Daily Log by ID
+# ---------------------------------------------------------------------------
 
 
 class TestDailyLogGet:
-    async def test_owner_can_get_log(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        log = await create_daily_log(db, project_id, owner.id)
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs/{log.id}", headers={"Authorization": f"Bearer {token}"})
-        assert res.status_code == 200
-        assert res.json()["id"] == log.id
+    async def test_owner_can_get_log(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
 
-    async def test_manager_can_get_log_on_assigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        await client.post(
-            f"/api/v1/projects/{project_id}/assign-manager",
-            json={"user_id": manager.id},
-            headers={"Authorization": f"Bearer {owner_token}"},
+        create_res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
         )
-        log = await create_daily_log(db, project_id, owner.id)
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs/{log.id}", headers={"Authorization": f"Bearer {manager_token}"})
+        log_id = create_res.json()["id"]
+
+        res = await owner_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log_id}")
+        assert res.status_code == 200
+        assert res.json()["id"] == log_id
+
+    async def test_assigned_manager_can_get_log(self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+
+        create_res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        log_id = create_res.json()["id"]
+
+        res = await manager_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log_id}")
         assert res.status_code == 200
 
-    async def test_manager_denied_on_unassigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        log = await create_daily_log(db, project_id, owner.id)
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs/{log.id}", headers={"Authorization": f"Bearer {manager_token}"})
+    async def test_unassigned_manager_cannot_get_log(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log_id = await create_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await manager_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log_id}")
         assert res.status_code == 404
 
-    async def test_log_not_found(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        res = await client.get(f"/api/v1/projects/{project_id}/daily-logs/99999", headers={"Authorization": f"Bearer {token}"})
+    async def test_log_not_found(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await owner_client.get(f"/api/v1/projects/{project.id}/daily-logs/99999")
         assert res.status_code == 404
+
+    async def test_unauthenticated_cannot_get(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await unauth_client.get(f"/api/v1/projects/{project.id}/daily-logs/1")
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Create Daily Log
+# ---------------------------------------------------------------------------
+
+
+class TestDailyLogCreate:
+    async def test_owner_can_create_log(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 201
+        assert res.json()["work_accomplished"] == "Poured concrete for foundation."
+        assert res.json()["project_id"] == project.id
+
+    async def test_assigned_manager_can_create_log(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+
+        res = await manager_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 201
+        assert res.json()["submitted_by"] == seed_users["manager"].id
+
+    async def test_unassigned_manager_cannot_create_log(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await manager_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 404
+
+    async def test_duplicate_log_date_returns_400(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 400
+
+    async def test_worker_cannot_create_log(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await worker_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_create(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await unauth_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Update Daily Log
+# ---------------------------------------------------------------------------
 
 
 class TestDailyLogUpdate:
-    async def test_owner_can_update(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        log = await create_daily_log(db, project_id, owner.id)
-        res = await client.patch(
-            f"/api/v1/projects/{project_id}/daily-logs/{log.id}",
-            json={"work_accomplished": "Updated work"},
-            headers={"Authorization": f"Bearer {token}"},
+    async def test_owner_can_update_log(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        create_res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
+        )
+        log_id = create_res.json()["id"]
+
+        res = await owner_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/{log_id}",
+            json=LOG_UPDATE_PAYLOAD,
         )
         assert res.status_code == 200
-        assert res.json()["work_accomplished"] == "Updated work"
+        assert res.json()["work_accomplished"] == "Updated work accomplished."
 
-    async def test_manager_can_update_on_assigned_project(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        manager_role = await create_role(db, "project_manager")
-        owner = await create_user(db, owner_role.id, email="owner@test.com")
-        manager = await create_user(db, manager_role.id, email="manager@test.com")
-        owner_token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {owner_token}"})
-        project_id = res.json()["id"]
-        await client.post(
-            f"/api/v1/projects/{project_id}/assign-manager",
-            json={"user_id": manager.id},
-            headers={"Authorization": f"Bearer {owner_token}"},
+    async def test_assigned_manager_can_update_log(self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+
+        create_res = await owner_client.post(
+            f"/api/v1/projects/{project.id}/daily-logs",
+            json=LOG_PAYLOAD,
         )
-        log = await create_daily_log(db, project_id, owner.id)
-        manager_token = await get_auth_token(client, "manager@test.com", "password123")
-        res = await client.patch(
-            f"/api/v1/projects/{project_id}/daily-logs/{log.id}",
-            json={"work_accomplished": "Manager updated"},
-            headers={"Authorization": f"Bearer {manager_token}"},
+        log_id = create_res.json()["id"]
+
+        res = await manager_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/{log_id}",
+            json=LOG_UPDATE_PAYLOAD,
         )
         assert res.status_code == 200
-        assert res.json()["work_accomplished"] == "Manager updated"
+        assert res.json()["work_accomplished"] == "Updated work accomplished."
 
-    async def test_update_not_found(self, client: AsyncClient, db: AsyncSession):
-        owner_role = await create_role(db, "owner")
-        await create_user(db, owner_role.id, email="owner@test.com")
-        token = await get_auth_token(client, "owner@test.com", "password123")
-        res = await client.post("/api/v1/projects", json=PROJECT_PAYLOAD, headers={"Authorization": f"Bearer {token}"})
-        project_id = res.json()["id"]
-        res = await client.patch(
-            f"/api/v1/projects/{project_id}/daily-logs/99999",
-            json={"work_accomplished": "Ghost update"},
-            headers={"Authorization": f"Bearer {token}"},
+    async def test_unassigned_manager_cannot_update_log(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log_id = await create_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await manager_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/{log_id}",
+            json=LOG_UPDATE_PAYLOAD,
         )
         assert res.status_code == 404
+
+    async def test_update_log_not_found(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await owner_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/99999",
+            json=LOG_UPDATE_PAYLOAD,
+        )
+        assert res.status_code == 404
+
+    async def test_worker_cannot_update_log(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await worker_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/1",
+            json=LOG_UPDATE_PAYLOAD,
+        )
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_update(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await unauth_client.patch(
+            f"/api/v1/projects/{project.id}/daily-logs/1",
+            json=LOG_UPDATE_PAYLOAD,
+        )
+        assert res.status_code == 401
