@@ -11,6 +11,7 @@ from app.models.project import (
     ProjectPhase,
     WorkerAssignment,
 )
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.project import (
     AssignUserRequest,
@@ -32,7 +33,8 @@ async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
     if cached:
         return [Project(**p) for p in cached]
 
-    if current_user.role.name == "owner":
+    current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    if current_role and current_role.name == "owner":
         result = await db.execute(select(Project))
         projects = result.scalars().all()
     else:
@@ -53,7 +55,8 @@ async def get_project_by_id(project_id: int, current_user: User, db: AsyncSessio
     if not project:
         logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
-    if current_user.role.name == "owner":
+    current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    if current_role and current_role.name == "owner":
         return project
     # PM — check if assigned
     assigned = (
@@ -100,7 +103,8 @@ async def assign_manager(project_id: int, data: AssignUserRequest, current_user:
 
     # Only project managers can be assigned as managers
     manager = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
-    if not manager or not manager.role or manager.role.name != "project_manager":
+    manager_role = (await db.execute(select(Role).where(Role.id == manager.role_id))).scalar_one_or_none() if manager else None
+    if not manager or not manager_role or manager_role.name != "project_manager":
         logger.warning(
             f"ASSIGN_MANAGER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a project manager"
         )
@@ -121,7 +125,8 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
 
     # Only site workers can be assigned as workers
     worker = (await db.execute(select(User).where(User.id == data.user_id))).scalar_one_or_none()
-    if not worker or not worker.role or worker.role.name != "site_worker":
+    worker_role = (await db.execute(select(Role).where(Role.id == worker.role_id))).scalar_one_or_none() if worker else None
+    if not worker or not worker_role or worker_role.name != "site_worker":
         logger.warning(
             f"ASSIGN_WORKER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=failed | reason=not a site worker"
         )
