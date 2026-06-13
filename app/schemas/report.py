@@ -10,6 +10,6 @@ class ReportResponse(BaseModel):
     week_start: date
     week_end: date
     s3_key: str
+    file_url: str | None = None
     created_at: datetime
-
     model_config = {"from_attributes": True}

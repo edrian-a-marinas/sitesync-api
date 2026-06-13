@@ -10,10 +10,22 @@ from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
 from app.models.material import Material
-from app.models.project import Project
+from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
+
+
+async def _verify_project_access(project_id: int, current_user: User, db: AsyncSession) -> bool:
+    if current_user.role.name == "owner":
+        return True
+    assigned = (
+        await db.execute(
+            select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
+        )
+    ).scalar_one_or_none()
+    return assigned is not None
 
 
 async def generate_report(project_id: int, generated_by: int, db: AsyncSession) -> Report | None:
@@ -108,12 +120,39 @@ Open Incidents: {len([i for i in incidents if i.status == "Open"])}
         return None
 
 
-async def get_reports(project_id: int, db: AsyncSession) -> list[Report]:
+def _get_file_url(s3_key: str) -> str:
+    # Local dev: return file path directly
+    # In future with AWS S3, replace this with a signed URL:
+    # """
+    # import boto3
+    # s3 = boto3.client("s3")
+    # return s3.generate_presigned_url(
+    #     "get_object",
+    #     Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+    #     ExpiresIn=3600,
+    # )
+    # """
+    return s3_key
+
+
+async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
     try:
         result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc()))
         reports = result.scalars().all()
         logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(reports)}")
-        return reports
+        return [
+            {
+                "id": r.id,
+                "project_id": r.project_id,
+                "generated_by": r.generated_by,
+                "week_start": r.week_start,
+                "week_end": r.week_end,
+                "s3_key": r.s3_key,
+                "file_url": _get_file_url(r.s3_key),
+                "created_at": r.created_at,
+            }
+            for r in reports
+        ]
     except Exception as e:
         logger.error(f"REPORT | get_reports | project_id={project_id} | error={str(e)}")
         return []
