@@ -6,15 +6,20 @@ from sqlalchemy.future import select
 from app.core.cache import delete_cache
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogUpdate
 
 logger = logging.getLogger(__name__)
 
 
+async def _is_owner(current_user: User, db: AsyncSession) -> bool:
+    role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    return role is not None and role.name == "owner"
+
+
 async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLog]:
-    # PM — verify assigned to project
-    if current_user.role.name != "owner":
+    if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
@@ -28,7 +33,7 @@ async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) 
 
 
 async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLog | None:
-    if current_user.role.name != "owner":
+    if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
@@ -40,7 +45,7 @@ async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, 
 
 
 async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog | None:
-    if current_user.role.name != "owner":
+    if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
                 select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
