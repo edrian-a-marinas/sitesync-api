@@ -1,6 +1,8 @@
 from app.core.limiter import limiter
 
 limiter.enabled = False
+from datetime import date
+
 import pytest_asyncio
 from fastapi import HTTPException, status
 from httpx import ASGITransport, AsyncClient
@@ -14,6 +16,7 @@ from app.core.settings import settings
 from app.database import Base, get_db
 from app.main import app
 from app.models.daily_log import DailyLog
+from app.models.project import Project
 from app.models.role import Role
 from app.models.user import User
 
@@ -114,7 +117,17 @@ async def seed_users(test_session_factory):
 
 
 # ── Per-test DB session with truncate ────────────────────────────────────────
-_PRESERVE_TABLES = {"users", "roles"}
+_PRESERVE_TABLES = {"users", "roles", "notifications"}
+
+
+@pytest_asyncio.fixture(scope="function", loop_scope="session", autouse=True)
+async def _truncate_tables(test_session_factory):
+    yield
+    async with test_session_factory() as session:
+        async with session.bind.begin() as conn:
+            for table in reversed(Base.metadata.sorted_tables):
+                if table.name not in _PRESERVE_TABLES:
+                    await conn.execute(table.delete())
 
 
 @pytest_asyncio.fixture(scope="function", loop_scope="session")
@@ -122,10 +135,6 @@ async def db(test_session_factory):
     async with test_session_factory() as session:
         yield session
         await session.rollback()
-        async with session.bind.begin() as conn:
-            for table in reversed(Base.metadata.sorted_tables):
-                if table.name not in _PRESERVE_TABLES:
-                    await conn.execute(table.delete())
 
 
 # ── get_db override ───────────────────────────────────────────────────────────
@@ -292,11 +301,7 @@ async def create_worker_assignment(db: AsyncSession, project_id: int, user_id: i
     await db.commit()
 
 
-async def create_project(db: AsyncSession, owner_id: int, name: str = "Test Project") -> "Project":
-    from datetime import date
-
-    from app.models.project import Project
-
+async def create_project(db: AsyncSession, owner_id: int, name: str = "Test Project") -> Project:
     project = Project(
         owner_id=owner_id,
         name=name,
