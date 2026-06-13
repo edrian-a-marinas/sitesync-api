@@ -1,6 +1,8 @@
 import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+
 from app.models.material import Material
 from app.models.project import ProjectAssignment
 from app.models.role import Role
@@ -15,11 +17,10 @@ async def get_materials(project_id: int, log_id: int, current_user: User, db: As
 
     if role and role.name == "site_worker":
         from app.models.project import WorkerAssignment
+
         assigned = (
             await db.execute(
-                select(WorkerAssignment)
-                .where(WorkerAssignment.project_id == project_id)
-                .where(WorkerAssignment.user_id == current_user.id)
+                select(WorkerAssignment).where(WorkerAssignment.project_id == project_id).where(WorkerAssignment.user_id == current_user.id)
             )
         ).scalar_one_or_none()
         if not assigned:
@@ -37,9 +38,7 @@ async def _check_manager_assigned(project_id: int, current_user: User, db: Async
     if role and role.name == "project_manager":
         assigned = (
             await db.execute(
-                select(ProjectAssignment)
-                .where(ProjectAssignment.project_id == project_id)
-                .where(ProjectAssignment.user_id == current_user.id)
+                select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
             )
         ).scalar_one_or_none()
         if not assigned:
@@ -59,12 +58,16 @@ async def create_material(project_id: int, log_id: int, data: MaterialCreate, cu
     return material
 
 
-async def update_material(project_id: int, log_id: int, material_id: int, data: MaterialUpdate, current_user: User, db: AsyncSession) -> Material | None | bool:
+async def update_material(
+    project_id: int, log_id: int, material_id: int, data: MaterialUpdate, current_user: User, db: AsyncSession
+) -> Material | None | bool:
     if not await _check_manager_assigned(project_id, current_user, db):
         return False
     material = (await db.execute(select(Material).where(Material.id == material_id).where(Material.daily_log_id == log_id))).scalar_one_or_none()
     if not material:
-        logger.warning(f"MATERIAL_UPDATE | log_id={log_id} | material_id={material_id} | updated_by={current_user.id} | status=failed | reason=not found")
+        logger.warning(
+            f"MATERIAL_UPDATE | log_id={log_id} | material_id={material_id} | updated_by={current_user.id} | status=failed | reason=not found"
+        )
         return None
     for field, value in data.model_dump(exclude_none=True).items():
         setattr(material, field, value)
