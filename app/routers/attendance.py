@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import require_owner_or_manager
+from app.core.dependencies import get_current_user, require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
@@ -33,7 +33,7 @@ async def get_attendance_endpoint(
     project_id: int,
     log_id: int,
     request: Request,
-    current_user: User = Depends(require_owner_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     return await get_attendance(project_id, log_id, current_user, db)
