@@ -8,6 +8,8 @@ from fastapi import HTTPException, status
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine as create_sync_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 
 from app.core.dependencies import get_current_user, require_owner, require_owner_or_manager
@@ -105,6 +107,15 @@ async def seed_users(test_session_factory):
             )
             session.add_all([owner, manager, worker, inactive])
             await session.flush()
+
+        # Re-fetch with role eagerly loaded so detached access to .role.name never lazy-loads
+        result = await session.execute(
+            select(User).where(User.email.in_(["owner@test.com", "manager@test.com", "worker@test.com"])).options(selectinload(User.role))
+        )
+        users = {u.email: u for u in result.scalars().all()}
+        owner = users["owner@test.com"]
+        manager = users["manager@test.com"]
+        worker = users["worker@test.com"]
 
     yield {
         "owner": owner,

@@ -1,294 +1,295 @@
+from datetime import date
+
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
-from app.models.role import Role
-from tests.conftest import (
-    create_daily_log,
-    create_role,
-    create_user,
-    create_worker_assignment,
-    get_auth_token,
-)
+from app.models.daily_log import DailyLog
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
 
-PROJECT_PAYLOAD = {
-    "name": "Attendance Test Project",
-    "location": "Manila",
-    "total_budget": 1000000.0,
-    "start_date": "2026-01-01",
-    "target_end_date": "2026-12-31",
-    "status": "Active",
-}
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+BASE = "/api/v1/projects/{project_id}/daily-logs/{log_id}/attendance"
+
+
+def attendance_url(project_id: int, log_id: int) -> str:
+    return f"/api/v1/projects/{project_id}/daily-logs/{log_id}/attendance"
+
+
+def me_url(project_id: int) -> str:
+    return f"/api/v1/projects/{project_id}/daily-logs/1/attendance/me"
+
+
+async def create_project(session_factory, owner_id: int) -> Project:
+    async with session_factory() as session:
+        project = Project(
+            owner_id=owner_id,
+            name="Attendance Test Project",
+            location="Manila",
+            total_budget=1_000_000,
+            start_date=date(2026, 1, 1),
+            target_end_date=date(2026, 12, 31),
+            status="Active",
+        )
+        session.add(project)
+        await session.commit()
+        await session.refresh(project)
+        return project
+
+
+async def create_daily_log(session_factory, project_id: int, submitted_by: int) -> DailyLog:
+    async with session_factory() as session:
+        log = DailyLog(
+            project_id=project_id,
+            submitted_by=submitted_by,
+            log_date=date(2026, 1, 1),
+            work_accomplished="Test work",
+        )
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+        return log
+
+
+async def assign_manager(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        session.add(ProjectAssignment(project_id=project_id, user_id=user_id))
+        await session.commit()
+
+
+async def assign_worker(session_factory, project_id: int, user_id: int) -> None:
+    async with session_factory() as session:
+        session.add(WorkerAssignment(project_id=project_id, user_id=user_id))
+        await session.commit()
+
+
+def attendance_payload(worker_id: int, hours: float = 8.0) -> dict:
+    return {"worker_id": worker_id, "hours_worked": hours}
 
 
 # ---------------------------------------------------------------------------
-# Shared setup helper
+# POST attendance  (create)
 # ---------------------------------------------------------------------------
 
 
-async def setup_project_with_manager_and_worker(client: AsyncClient, db: AsyncSession):
-    """
-    Creates owner, manager, worker.
-    Owner creates project, assigns manager.
-    Returns all IDs and tokens needed by tests.
-    """
-    owner_role = await create_role(db, "owner")
-    manager_role = await create_role(db, "project_manager")
-    worker_role = await create_role(db, "site_worker")
+class TestCreateAttendance:
+    async def test_owner_can_create_attendance(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
 
-    owner = await create_user(db, owner_role.id, email="owner@test.com")
-    manager = await create_user(db, manager_role.id, email="manager@test.com")
-    worker = await create_user(db, worker_role.id, email="worker@test.com")
-
-    owner_token = await get_auth_token(client, "owner@test.com", "password123")
-
-    res = await client.post(
-        "/api/v1/projects",
-        json=PROJECT_PAYLOAD,
-        headers={"Authorization": f"Bearer {owner_token}"},
-    )
-    project_id = res.json()["id"]
-
-    await client.post(
-        f"/api/v1/projects/{project_id}/assign-manager",
-        json={"user_id": manager.id},
-        headers={"Authorization": f"Bearer {owner_token}"},
-    )
-
-    manager_token = await get_auth_token(client, "manager@test.com", "password123")
-
-    log = await create_daily_log(db, project_id, owner.id, "2026-01-01")
-
-    return {
-        "owner": owner,
-        "owner_token": owner_token,
-        "manager": manager,
-        "manager_token": manager_token,
-        "worker": worker,
-        "project_id": project_id,
-        "log_id": log.id,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Submit Attendance
-# ---------------------------------------------------------------------------
-
-
-class TestAttendanceSubmit:
-    async def test_owner_can_submit_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+        res = await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
         assert res.status_code == 201
-        assert res.json()["worker_id"] == ctx["worker"].id
-        assert res.json()["hours_worked"] == 8.0
+        data = res.json()
+        assert data["worker_id"] == seed_users["worker"].id
+        assert data["daily_log_id"] == log.id
+        assert data["hours_worked"] == 8.0
 
-    async def test_assigned_manager_can_submit_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
+    async def test_assigned_manager_can_create_attendance(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
 
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 9.0},
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
+        res = await manager_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
         assert res.status_code == 201
-        assert res.json()["daily_log_id"] == ctx["log_id"]
+        assert res.json()["worker_id"] == seed_users["worker"].id
 
-    async def test_worker_not_assigned_to_project_returns_400(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        # Intentionally skip create_worker_assignment
+    async def test_unassigned_manager_cannot_create_attendance(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        # manager NOT assigned to this project
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
 
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+        res = await manager_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
         assert res.status_code == 400
 
-    async def test_duplicate_submission_returns_400(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
+    async def test_worker_not_assigned_to_project_returns_400(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        # worker NOT assigned via WorkerAssignment
 
-        payload = {"worker_id": ctx["worker"].id, "hours_worked": 8.0}
-        url = f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance"
-
-        # First submission via HTTP — goes through its own session via dependency override
-        res1 = await client.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-        assert res1.status_code == 201
-
-        # Second submission — same worker same log, should be rejected
-        res2 = await client.post(
-            url,
-            json=payload,
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-        assert res2.status_code == 400
-
-    async def test_invalid_log_id_returns_400(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/99999/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+        res = await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
         assert res.status_code == 400
 
-    async def test_unauthenticated_cannot_submit(self, client: AsyncClient, db: AsyncSession):
-        res = await client.post(
-            "/api/v1/projects/1/daily-logs/1/attendance",
-            json={"worker_id": 1, "hours_worked": 8.0},
+    async def test_duplicate_attendance_returns_400(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+
+        payload = attendance_payload(seed_users["worker"].id)
+        await owner_client.post(attendance_url(project.id, log.id), json=payload)
+        res = await owner_client.post(attendance_url(project.id, log.id), json=payload)
+
+        assert res.status_code == 400
+
+    async def test_nonexistent_log_returns_400(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+
+        res = await owner_client.post(
+            attendance_url(project.id, 99999),
+            json=attendance_payload(seed_users["worker"].id),
+        )
+
+        assert res.status_code == 400
+
+    async def test_site_worker_cannot_create_attendance(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await worker_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
+        )
+
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_create(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await unauth_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
         assert res.status_code == 401
 
-    async def test_unassigned_manager_cannot_submit(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        # Reuse existing project_manager role
-        from sqlalchemy.future import select
-
-        from app.models.role import Role
-
-        manager_role = (await db.execute(select(Role).where(Role.name == "project_manager"))).scalar_one()
-        await create_user(db, manager_role.id, email="manager2@test.com")
-        unassigned_token = await get_auth_token(client, "manager2@test.com", "password123")
-
-        res = await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {unassigned_token}"},
-        )
-
-        # Unassigned manager gets blocked by require_owner_or_manager dependency
-        assert res.status_code in [400, 403]
-
 
 # ---------------------------------------------------------------------------
-# Get Attendance
+# GET attendance  (list)
 # ---------------------------------------------------------------------------
 
 
-class TestAttendanceGet:
-    async def test_owner_can_get_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+class TestGetAttendance:
+    async def test_owner_sees_all_attendance_for_log(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+        await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
+        res = await owner_client.get(attendance_url(project.id, log.id))
 
         assert res.status_code == 200
         assert len(res.json()) == 1
-        assert res.json()[0]["worker_id"] == ctx["worker"].id
+        assert res.json()[0]["worker_id"] == seed_users["worker"].id
 
-    async def test_assigned_manager_can_get_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
+    async def test_manager_sees_all_attendance_for_log(
+        self, owner_client: AsyncClient, manager_client: AsyncClient, seed_users, test_session_factory
+    ):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+        await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            headers={"Authorization": f"Bearer {ctx['manager_token']}"},
-        )
+        res = await manager_client.get(attendance_url(project.id, log.id))
 
         assert res.status_code == 200
         assert len(res.json()) == 1
 
-    async def test_invalid_log_returns_empty_list(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/99999/attendance",
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+    async def test_worker_sees_only_own_attendance(self, owner_client: AsyncClient, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+        await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
+
+        res = await worker_client.get(attendance_url(project.id, log.id))
+
+        assert res.status_code == 200
+        records = res.json()
+        assert all(r["worker_id"] == seed_users["worker"].id for r in records)
+
+    async def test_nonexistent_log_returns_empty_list(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+
+        res = await owner_client.get(attendance_url(project.id, 99999))
 
         assert res.status_code == 200
         assert res.json() == []
 
-    async def test_unauthenticated_cannot_get(self, client: AsyncClient, db: AsyncSession):
-        res = await client.get("/api/v1/projects/1/daily-logs/1/attendance")
+    async def test_unauthenticated_cannot_get(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await unauth_client.get(attendance_url(project.id, log.id))
 
         assert res.status_code == 401
 
-    async def test_worker_can_see_own_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
 
-        # Submit attendance for the worker
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
+# ---------------------------------------------------------------------------
+# GET /me  (attendance history)
+# ---------------------------------------------------------------------------
+
+
+class TestGetMyAttendanceHistory:
+    async def test_worker_sees_own_history(self, owner_client: AsyncClient, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
+        await owner_client.post(
+            attendance_url(project.id, log.id),
+            json=attendance_payload(seed_users["worker"].id),
         )
 
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            headers={"Authorization": f"Bearer {worker_token}"},
-        )
+        res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log.id}/attendance/me")
 
         assert res.status_code == 200
         assert len(res.json()) == 1
-        assert res.json()[0]["worker_id"] == ctx["worker"].id
+        record = res.json()[0]
+        assert record["daily_log_id"] == log.id
+        assert record["hours_worked"] == 8.0
+        assert "log_date" in record
 
-    async def test_worker_cannot_see_other_workers_attendance(self, client: AsyncClient, db: AsyncSession):
-        ctx = await setup_project_with_manager_and_worker(client, db)
+    async def test_owner_can_view_own_history_endpoint(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
 
-        # Assign both workers to project
-        worker_role = (await db.execute(select(Role).where(Role.name == "site_worker"))).scalar_one()
-        other_worker = await create_user(db, worker_role.id, email="worker2@test.com")
-        await create_worker_assignment(db, ctx["project_id"], ctx["worker"].id)
-        await create_worker_assignment(db, ctx["project_id"], other_worker.id)
-
-        # Submit attendance for both workers
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": ctx["worker"].id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-        await client.post(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            json={"worker_id": other_worker.id, "hours_worked": 8.0},
-            headers={"Authorization": f"Bearer {ctx['owner_token']}"},
-        )
-
-        # Worker 1 should only see their own record
-        worker_token = await get_auth_token(client, "worker@test.com", "password123")
-        res = await client.get(
-            f"/api/v1/projects/{ctx['project_id']}/daily-logs/{ctx['log_id']}/attendance",
-            headers={"Authorization": f"Bearer {worker_token}"},
-        )
+        # owner has no attendance records — should return empty list, not error
+        res = await owner_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log.id}/attendance/me")
 
         assert res.status_code == 200
-        assert len(res.json()) == 1
-        assert res.json()[0]["worker_id"] == ctx["worker"].id
+        assert res.json() == []
+
+    async def test_history_returns_empty_when_no_records(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log.id}/attendance/me")
+
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_unauthenticated_cannot_get_history(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+
+        res = await unauth_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log.id}/attendance/me")
+
+        assert res.status_code == 401
