@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,7 @@ from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.dashboard import OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
+from app.schemas.dashboard import CurrentShiftLog, OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
 
 logger = logging.getLogger(__name__)
 
@@ -169,11 +170,12 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
 async def get_worker_dashboard(current_user: User, db: AsyncSession) -> WorkerDashboard:
     # Get assigned project
     assignment = (await db.execute(select(WorkerAssignment).where(WorkerAssignment.user_id == current_user.id))).scalar_one_or_none()
-
     project_name = None
+    project_id = None
     if assignment:
         project = (await db.execute(select(Project).where(Project.id == assignment.project_id))).scalar_one_or_none()
         project_name = project.name if project else None
+        project_id = assignment.project_id
 
     # Total logs they appear in
     total_logs = (await db.execute(select(func.count(Attendance.id)).where(Attendance.worker_id == current_user.id))).scalar() or 0
@@ -181,12 +183,29 @@ async def get_worker_dashboard(current_user: User, db: AsyncSession) -> WorkerDa
     # Total hours worked
     total_hours = (await db.execute(select(func.sum(Attendance.hours_worked)).where(Attendance.worker_id == current_user.id))).scalar() or 0.0
 
-    logger.info(f"WORKER_DASHBOARD | worker_id={current_user.id}")
+    # Current shift log — today's log for assigned project
+    current_shift_log = None
+    if project_id:
+        log = (
+            await db.execute(select(DailyLog).where(DailyLog.project_id == project_id).where(DailyLog.log_date == date.today()))
+        ).scalar_one_or_none()
+        if log:
+            current_shift_log = CurrentShiftLog(
+                log_id=log.id,
+                log_date=str(log.log_date),
+                work_accomplished=log.work_accomplished,
+                weather_condition=log.weather_condition,
+            )
+            logger.info(f"WORKER_DASHBOARD | worker_id={current_user.id} | current_shift_log={log.id}")
+        else:
+            logger.info(f"WORKER_DASHBOARD | worker_id={current_user.id} | current_shift_log=none")
 
+    logger.info(f"WORKER_DASHBOARD | worker_id={current_user.id} | total_logs={total_logs} | total_hours={total_hours}")
     return WorkerDashboard(
         worker_id=current_user.id,
         worker_name=f"{current_user.first_name} {current_user.last_name}",
         assigned_project=project_name,
         total_logs=total_logs,
         total_hours_worked=float(total_hours),
+        current_shift_log=current_shift_log,
     )

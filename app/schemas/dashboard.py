@@ -43,9 +43,20 @@ class ProjectManagerDashboard(BaseModel):
     phases: list[PhaseBudgetSummary]
 
 
+class CurrentShiftLog(BaseModel):
+    log_id: int
+    log_date: str
+    work_accomplished: str
+    weather_condition: str | None
+
+    class Config:
+        from_attributes = True
+
+
 class WorkerDashboard(BaseModel):
     worker_id: int
     worker_name: str
     assigned_project: str | None
     total_logs: int
     total_hours_worked: float
+    current_shift_log: CurrentShiftLog | None
