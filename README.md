@@ -47,7 +47,7 @@ When an Owner submits a natural language question such as "Which project consume
 
 ### ML Analytics & Predictive Insights
 
-SiteSync runs a dedicated ML pipeline that trains predictive models on accumulated project data, serving the Owner exclusively. A budget overrun classifier, delay risk scorer, and material demand forecaster are trained on historical logs, attendance, material consumption, and budget actuals from RDS PostgreSQL — retrained automatically every week via Celery Beat. Predictive insights are surfaced on the Owner dashboard alongside standard KPIs, giving leadership forward-looking signals rather than just historical reporting.
+SiteSync runs a dedicated ML pipeline that trains predictive models on accumulated project data, serving the Owner exclusively. A budget overrun classifier, delay risk scorer, and material demand forecaster are trained on historical logs, attendance, material consumption, and budget actuals from RDS PostgreSQL — retrained automatically every week via Celery Beat. Predictive insights are served via dedicated ML endpoints — budget overrun probability, delay risk score, and material cost forecast — accessible exclusively by the Owner through a dedicated Analytics page in the frontend. This page is separate from the operational Dashboard and historical Reports, giving leadership a focused forward-looking view of project risk and material demand.
 
 ### Caching
 
@@ -75,3 +75,23 @@ All three roles share the same UI shell — same sidebar, same navigation struct
 Owner — the construction company owner/CEO. The person who runs the business, owns all projects, sees everything, uses the AI assistant to make decisions. Not necessarily technical — just the boss.
 Project Manager — in construction this is typically the Civil Engineer or Site Engineer or Site Manager or Foreman. They manage the full project lifecycle, submit daily logs, monitor budget vs actual, assign workers. Could also be a Foreman in smaller firms.
 Site Worker — the construction workers on the ground. Masons, carpenters, electricians, laborers. They just log attendance and see their daily tasks. No management access.
+
+### Owner & Project Manager Panel
+Owner and Project Manager share the same UI shell and sidebar. The backend enforces data scoping per role — Owners see all projects, Managers see only assigned ones. Analytics and AI Assistant are hidden from Project Managers since their backend endpoints are owner-only.
+
+| Menu | Description | Owner | Project Manager |
+|------|-------------|-------|-----------------|
+| **Dashboard** | KPIs scoped per role — budget, workforce, incidents, project health. | ✅ | ✅ |
+| **Projects** | Project and phase management. Managers get view-only on assigned projects. | ✅ | ✅ |
+| **Daily Logs** | Submit and manage daily site logs. | ✅ | ✅ |
+| **Reports** | Weekly PDF reports. Scoped per role. | ✅ | ✅ |
+| **Analytics** | ML predictions — budget overrun, delay risk, material forecast. | ✅ | ❌ |
+| **AI Assistant** | Natural language query interface for cross-project insights. | ✅ | ❌ |
+
+### Site Worker Panel
+Separate minimal UI — same design system, different shell and nav.
+
+| Menu | Description |
+|------|-------------|
+| **My Attendance** | View personal attendance history across assigned projects. |
+| **Daily Log** | View the current shift daily log for their assigned project. |
