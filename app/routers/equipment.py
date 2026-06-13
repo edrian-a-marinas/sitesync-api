@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import require_owner_or_manager
+from app.core.dependencies import get_current_user, require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
@@ -17,10 +17,10 @@ async def list_equipment(
     project_id: int,
     log_id: int,
     request: Request,
-    current_user: User = Depends(require_owner_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_equipment(log_id, db)
+    return await get_equipment(project_id, log_id, current_user, db)
 
 
 @router.post("", response_model=EquipmentResponse, status_code=status.HTTP_201_CREATED)
@@ -33,7 +33,10 @@ async def create_equipment_endpoint(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await create_equipment(log_id, data, current_user, db)
+    equipment = await create_equipment(project_id, log_id, data, current_user, db)
+    if not equipment:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    return equipment
 
 
 @router.patch("/{equipment_id}", response_model=EquipmentResponse)
@@ -47,7 +50,9 @@ async def update_equipment_endpoint(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    equipment = await update_equipment(log_id, equipment_id, data, current_user, db)
-    if not equipment:
+    equipment = await update_equipment(project_id, log_id, equipment_id, data, current_user, db)
+    if equipment is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    if equipment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipment not found")
     return equipment
