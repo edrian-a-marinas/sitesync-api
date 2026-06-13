@@ -13,7 +13,7 @@ from app.schemas.attendance import AttendanceCreate
 logger = logging.getLogger(__name__)
 
 
-async def submit_attendance(project_id: int, log_id: int, data: AttendanceCreate, current_user: User, db: AsyncSession) -> Attendance | None:
+async def create_attendance(project_id: int, log_id: int, data: AttendanceCreate, current_user: User, db: AsyncSession) -> Attendance | None:
     # If manager, verify they are assigned to this project
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     if role and role.name == "project_manager":
@@ -82,3 +82,19 @@ async def get_attendance(project_id: int, log_id: int, current_user: User, db: A
         logger.info(f"ATTENDANCE | get | log_id={log_id} | user_id={current_user.id} | scope=all")
 
     return result.scalars().all()
+
+
+async def get_my_attendance_history(project_id: int, current_user: User, db: AsyncSession, page: int = 1, limit: int = 20) -> list[dict]:
+    offset = (page - 1) * limit
+    result = await db.execute(
+        select(Attendance, DailyLog.log_date)
+        .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+        .where(DailyLog.project_id == project_id)
+        .where(Attendance.worker_id == current_user.id)
+        .order_by(DailyLog.log_date.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    rows = result.all()
+    logger.info(f"ATTENDANCE_HISTORY | worker_id={current_user.id} | project_id={project_id} | page={page} | limit={limit} | count={len(rows)}")
+    return [{"id": a.id, "daily_log_id": a.daily_log_id, "hours_worked": float(a.hours_worked), "log_date": str(log_date)} for a, log_date in rows]
