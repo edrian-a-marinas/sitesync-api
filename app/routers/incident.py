@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import require_owner_or_manager
+from app.core.dependencies import get_current_user, require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
@@ -17,10 +17,10 @@ async def list_incidents(
     project_id: int,
     log_id: int,
     request: Request,
-    current_user: User = Depends(require_owner_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await get_incidents(log_id, db)
+    return await get_incidents(project_id, log_id, current_user, db)
 
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
@@ -33,7 +33,10 @@ async def create_incident_endpoint(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await create_incident(log_id, data, current_user, db)
+    incident = await create_incident(project_id, log_id, data, current_user, db)
+    if not incident:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    return incident
 
 
 @router.patch("/{incident_id}", response_model=IncidentResponse)
@@ -47,7 +50,9 @@ async def update_incident_endpoint(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    incident = await update_incident(log_id, incident_id, data, current_user, db)
-    if not incident:
+    incident = await update_incident(project_id, log_id, incident_id, data, current_user, db)
+    if incident is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     return incident
