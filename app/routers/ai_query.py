@@ -20,6 +20,7 @@ from app.tasks.ai_query import process_ai_query
 router = APIRouter(prefix="/ai", tags=["AI"])
 
 
+# ==================== Tasks ====================
 @router.post("/query", response_model=AIQueryResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def create_query(
@@ -33,6 +34,7 @@ async def create_query(
     return query
 
 
+# ==================== Services ====================
 @router.get("/query/{query_id}", response_model=AIQueryResponse)
 @limiter.limit("30/minute")
 async def get_query(
