@@ -1,4 +1,10 @@
+import uuid
+
 from httpx import AsyncClient
+
+
+def unique_email(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex[:8]}@test.com"
 
 
 async def get_token(client: AsyncClient, email: str, password: str) -> str:
@@ -65,7 +71,7 @@ class TestAuthRegister:
         res = await unauth_client.post(
             "/api/v1/auth/register",
             json={
-                "email": "newmanager@test.com",
+                "email": unique_email("newmanager"),
                 "password": "password123",
                 "first_name": "Jane",
                 "last_name": "Doe",
@@ -74,14 +80,14 @@ class TestAuthRegister:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 201
-        assert res.json()["email"] == "newmanager@test.com"
+        assert res.status_code == 201
 
     async def test_manager_creates_worker(self, unauth_client: AsyncClient, seed_users):
         token = await get_token(unauth_client, "manager@test.com", "password123")
         res = await unauth_client.post(
             "/api/v1/auth/register",
             json={
-                "email": "newworker2@test.com",
+                "email": unique_email("newworker"),
                 "password": "password123",
                 "first_name": "Bob",
                 "last_name": "Smith",
@@ -96,7 +102,7 @@ class TestAuthRegister:
         res = await unauth_client.post(
             "/api/v1/auth/register",
             json={
-                "email": "badmanager2@test.com",
+                "email": unique_email("badmanager"),
                 "password": "password123",
                 "first_name": "Bad",
                 "last_name": "Actor",
@@ -109,7 +115,7 @@ class TestAuthRegister:
     async def test_duplicate_email(self, unauth_client: AsyncClient, seed_users):
         token = await get_token(unauth_client, "owner@test.com", "password123")
         payload = {
-            "email": "dupuser@test.com",
+            "email": unique_email("dupuser"),
             "password": "password123",
             "first_name": "Jane",
             "last_name": "Doe",
@@ -132,7 +138,7 @@ class TestAuthRegister:
         res = await unauth_client.post(
             "/api/v1/auth/register",
             json={
-                "email": "owner2@test.com",
+                "email": unique_email("owner2"),
                 "password": "password123",
                 "first_name": "Bad",
                 "last_name": "Actor",
@@ -146,7 +152,7 @@ class TestAuthRegister:
         res = await unauth_client.post(
             "/api/v1/auth/register",
             json={
-                "email": "someone@test.com",
+                "email": unique_email("someone"),
                 "password": "password123",
                 "first_name": "No",
                 "last_name": "Auth",

@@ -1,6 +1,8 @@
 from datetime import date
 
+import pytest_asyncio
 from httpx import AsyncClient
+from sqlalchemy import delete
 
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
@@ -9,105 +11,106 @@ from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Session-scoped seeds
 # ---------------------------------------------------------------------------
 
 
-async def create_project(session_factory, owner_id: int, name: str = "Test Project") -> Project:
-    async with session_factory() as session:
-        project = Project(
-            owner_id=owner_id,
-            name=name,
-            location="Manila",
-            total_budget=1_000_000,
-            start_date=date(2026, 1, 1),
-            target_end_date=date(2026, 12, 31),
-            status="Active",
-        )
-        session.add(project)
-        await session.commit()
-        await session.refresh(project)
-        return project
-
-
-async def create_daily_log(session_factory, project_id: int, submitted_by: int) -> DailyLog:
-    async with session_factory() as session:
-        log = DailyLog(
-            project_id=project_id,
-            submitted_by=submitted_by,
-            log_date=date(2026, 1, 1),
-            work_accomplished="Test work",
-        )
-        session.add(log)
-        await session.commit()
-        await session.refresh(log)
-        return log
-
-
-async def assign_manager(session_factory, project_id: int, user_id: int) -> None:
-    async with session_factory() as session:
-        session.add(ProjectAssignment(project_id=project_id, user_id=user_id))
-        await session.commit()
-
-
-async def assign_worker(session_factory, project_id: int, user_id: int) -> None:
-    async with session_factory() as session:
-        session.add(WorkerAssignment(project_id=project_id, user_id=user_id))
-        await session.commit()
-
-
-async def create_material(session_factory, log_id: int) -> None:
-    async with session_factory() as session:
-        session.add(
-            Material(
-                daily_log_id=log_id,
-                name="Cement",
-                quantity=10.0,
-                unit="bags",
-                unit_cost=250.0,
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seed_owner_dashboard(test_session_factory, seed_users):
+    async with test_session_factory() as session:
+        async with session.begin():
+            p1 = Project(
+                owner_id=seed_users["owner"].id,
+                name="Dash Project A",
+                location="Manila",
+                total_budget=1_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
             )
-        )
-        await session.commit()
-
-
-async def create_attendance(session_factory, log_id: int, worker_id: int, hours: float = 8.0) -> None:
-    async with session_factory() as session:
-        session.add(
-            Attendance(
-                daily_log_id=log_id,
-                worker_id=worker_id,
-                hours_worked=hours,
+            p2 = Project(
+                owner_id=seed_users["owner"].id,
+                name="Dash Project B",
+                location="Manila",
+                total_budget=1_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
             )
-        )
-        await session.commit()
+            session.add_all([p1, p2])
+            await session.flush()
+            log = DailyLog(project_id=p1.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 1, 1), work_accomplished="Test work")
+            session.add(log)
+            await session.flush()
+            session.add(Material(daily_log_id=log.id, name="Cement", quantity=10.0, unit="bags", unit_cost=250.0))
+    yield {"p1": p1, "p2": p2, "log": log}
+    async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(Material).where(Material.daily_log_id == log.id))
+            await session.execute(delete(DailyLog).where(DailyLog.id == log.id))
+            await session.execute(delete(Project).where(Project.id.in_([p1.id, p2.id])))
 
 
-async def create_incident(session_factory, log_id: int, reported_by: int, status: str = "Open") -> None:
-    async with session_factory() as session:
-        session.add(
-            Incident(
-                daily_log_id=log_id,
-                reported_by=reported_by,
-                description="Test incident",
-                severity="High",
-                status=status,
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seed_manager_dashboard(test_session_factory, seed_users):
+    async with test_session_factory() as session:
+        async with session.begin():
+            p = Project(
+                owner_id=seed_users["owner"].id,
+                name="Mgr Dash Project",
+                location="Manila",
+                total_budget=1_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
             )
-        )
-        await session.commit()
+            session.add(p)
+            await session.flush()
+            assignment = ProjectAssignment(project_id=p.id, user_id=seed_users["manager"].id)
+            log = DailyLog(project_id=p.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 1, 1), work_accomplished="Test work")
+            session.add_all([assignment, log])
+            await session.flush()
+            incident = Incident(daily_log_id=log.id, reported_by=seed_users["owner"].id, description="Test incident", severity="High", status="Open")
+            phase = ProjectPhase(project_id=p.id, name="Foundation", allocated_budget=500_000, status="In Progress")
+            session.add_all([incident, phase])
+    yield {"project": p, "log": log, "phase": phase, "incident": incident}
+    async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(Incident).where(Incident.daily_log_id == log.id))
+            await session.execute(delete(ProjectPhase).where(ProjectPhase.project_id == p.id))
+            await session.execute(delete(DailyLog).where(DailyLog.id == log.id))
+            await session.execute(delete(ProjectAssignment).where(ProjectAssignment.project_id == p.id))
+            await session.execute(delete(Project).where(Project.id == p.id))
 
 
-async def create_phase(session_factory, project_id: int) -> ProjectPhase:
-    async with session_factory() as session:
-        phase = ProjectPhase(
-            project_id=project_id,
-            name="Foundation",
-            allocated_budget=500_000,
-            status="In Progress",
-        )
-        session.add(phase)
-        await session.commit()
-        await session.refresh(phase)
-        return phase
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seed_worker_dashboard(test_session_factory, seed_users):
+    async with test_session_factory() as session:
+        async with session.begin():
+            p = Project(
+                owner_id=seed_users["owner"].id,
+                name="Worker Dash Project",
+                location="Manila",
+                total_budget=1_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
+            )
+            session.add(p)
+            await session.flush()
+            assignment = WorkerAssignment(project_id=p.id, user_id=seed_users["worker"].id)
+            log = DailyLog(project_id=p.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 1, 1), work_accomplished="Test work")
+            session.add_all([assignment, log])
+            await session.flush()
+            attendance = Attendance(daily_log_id=log.id, worker_id=seed_users["worker"].id, hours_worked=8.0)
+            session.add(attendance)
+    yield {"project": p, "log": log, "attendance": attendance}
+    async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(Attendance).where(Attendance.daily_log_id == log.id))
+            await session.execute(delete(DailyLog).where(DailyLog.id == log.id))
+            await session.execute(delete(WorkerAssignment).where(WorkerAssignment.project_id == p.id))
+            await session.execute(delete(Project).where(Project.id == p.id))
 
 
 # ---------------------------------------------------------------------------
@@ -116,11 +119,8 @@ async def create_phase(session_factory, project_id: int) -> ProjectPhase:
 
 
 class TestOwnerDashboard:
-    async def test_owner_can_access_dashboard(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        await create_project(test_session_factory, seed_users["owner"].id)
-
+    async def test_owner_can_access_dashboard(self, owner_client: AsyncClient, seed_owner_dashboard):
         res = await owner_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 200
         data = res.json()
         assert "total_active_projects" in data
@@ -130,38 +130,26 @@ class TestOwnerDashboard:
         assert "total_workers_active" in data
         assert "total_material_cost" in data
 
-    async def test_owner_dashboard_counts_active_projects(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        await create_project(test_session_factory, seed_users["owner"].id, name="Project A")
-        await create_project(test_session_factory, seed_users["owner"].id, name="Project B")
-
+    async def test_owner_dashboard_counts_active_projects(self, owner_client: AsyncClient, seed_owner_dashboard):
         res = await owner_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 200
         assert res.json()["total_active_projects"] >= 2
 
-    async def test_owner_dashboard_reflects_material_cost(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
-        await create_material(test_session_factory, log.id)
-
+    async def test_owner_dashboard_reflects_material_cost(self, owner_client: AsyncClient, seed_owner_dashboard):
         res = await owner_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 200
-        assert res.json()["total_material_cost"] >= 2500.0  # 10 * 250
+        assert res.json()["total_material_cost"] >= 2500.0
 
-    async def test_manager_cannot_access_owner_dashboard(self, manager_client: AsyncClient, seed_users, test_session_factory):
+    async def test_manager_cannot_access_owner_dashboard(self, manager_client: AsyncClient):
         res = await manager_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 403
 
-    async def test_worker_cannot_access_owner_dashboard(self, worker_client: AsyncClient, seed_users, test_session_factory):
+    async def test_worker_cannot_access_owner_dashboard(self, worker_client: AsyncClient):
         res = await worker_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 403
 
     async def test_unauthenticated_cannot_access_owner_dashboard(self, unauth_client: AsyncClient):
         res = await unauth_client.get("/api/v1/dashboard/owner")
-
         assert res.status_code == 401
 
 
@@ -171,15 +159,13 @@ class TestOwnerDashboard:
 
 
 class TestManagerDashboard:
-    async def test_owner_can_access_manager_dashboard(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-
-        res = await owner_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_owner_can_access_manager_dashboard(self, owner_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await owner_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 200
         data = res.json()
-        assert data["project_id"] == project.id
-        assert data["project_name"] == project.name
+        assert data["project_id"] == p.id
+        assert data["project_name"] == p.name
         assert "logs_submitted" in data
         assert "attendance_rate" in data
         assert "total_material_cost" in data
@@ -187,62 +173,60 @@ class TestManagerDashboard:
         assert "open_incidents" in data
         assert "phases" in data
 
-    async def test_assigned_manager_can_access_dashboard(self, manager_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
-
-        res = await manager_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_assigned_manager_can_access_dashboard(self, manager_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await manager_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 200
-        assert res.json()["project_id"] == project.id
+        assert res.json()["project_id"] == p.id
 
-    async def test_unassigned_manager_gets_404(self, manager_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-
-        res = await manager_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_unassigned_manager_gets_404(self, manager_client: AsyncClient, test_session_factory, seed_users):
+        # needs its own isolated project with no assignment
+        async with test_session_factory() as session:
+            async with session.begin():
+                p = Project(
+                    owner_id=seed_users["owner"].id,
+                    name="Unassigned Project",
+                    location="Manila",
+                    total_budget=1_000_000,
+                    start_date=date(2026, 1, 1),
+                    target_end_date=date(2026, 12, 31),
+                    status="Active",
+                )
+                session.add(p)
+        res = await manager_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 404
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Project).where(Project.id == p.id))
 
-    async def test_nonexistent_project_returns_404(self, owner_client: AsyncClient, seed_users, test_session_factory):
+    async def test_nonexistent_project_returns_404(self, owner_client: AsyncClient):
         res = await owner_client.get("/api/v1/dashboard/manager/99999")
-
         assert res.status_code == 404
 
-    async def test_dashboard_reflects_logs_and_incidents(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
-        await create_incident(test_session_factory, log.id, seed_users["owner"].id, status="Open")
-
-        res = await owner_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_dashboard_reflects_logs_and_incidents(self, owner_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await owner_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 200
         data = res.json()
         assert data["logs_submitted"] >= 1
         assert data["total_incidents"] >= 1
         assert data["open_incidents"] >= 1
 
-    async def test_dashboard_includes_phases(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        await create_phase(test_session_factory, project.id)
-
-        res = await owner_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_dashboard_includes_phases(self, owner_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await owner_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 200
-        assert len(res.json()["phases"]) == 1
-        assert res.json()["phases"][0]["phase_name"] == "Foundation"
+        phases = res.json()["phases"]
+        assert any(ph["phase_name"] == "Foundation" for ph in phases)
 
-    async def test_worker_cannot_access_manager_dashboard(self, worker_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-
-        res = await worker_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_worker_cannot_access_manager_dashboard(self, worker_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await worker_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 403
 
-    async def test_unauthenticated_cannot_access_manager_dashboard(self, unauth_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-
-        res = await unauth_client.get(f"/api/v1/dashboard/manager/{project.id}")
-
+    async def test_unauthenticated_cannot_access_manager_dashboard(self, unauth_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await unauth_client.get(f"/api/v1/dashboard/manager/{p.id}")
         assert res.status_code == 401
 
 
@@ -252,9 +236,8 @@ class TestManagerDashboard:
 
 
 class TestWorkerDashboard:
-    async def test_worker_can_access_own_dashboard(self, worker_client: AsyncClient, seed_users, test_session_factory):
+    async def test_worker_can_access_own_dashboard(self, worker_client: AsyncClient, seed_users, seed_worker_dashboard):
         res = await worker_client.get("/api/v1/dashboard/worker")
-
         assert res.status_code == 200
         data = res.json()
         assert data["worker_id"] == seed_users["worker"].id
@@ -263,42 +246,22 @@ class TestWorkerDashboard:
         assert "total_hours_worked" in data
         assert "current_shift_log" in data
 
-    async def test_worker_dashboard_reflects_assigned_project(self, worker_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
-
+    async def test_worker_dashboard_reflects_assigned_project(self, worker_client: AsyncClient, seed_worker_dashboard):
         res = await worker_client.get("/api/v1/dashboard/worker")
-
         assert res.status_code == 200
-        assert res.json()["assigned_project"] == project.name
+        assert res.json()["assigned_project"] == seed_worker_dashboard["project"].name
 
-    async def test_worker_dashboard_reflects_attendance(self, worker_client: AsyncClient, seed_users, test_session_factory):
-        project = await create_project(test_session_factory, seed_users["owner"].id)
-        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
-        await assign_worker(test_session_factory, project.id, seed_users["worker"].id)
-        await create_attendance(test_session_factory, log.id, seed_users["worker"].id, hours=8.0)
-
+    async def test_worker_dashboard_reflects_attendance(self, worker_client: AsyncClient, seed_worker_dashboard):
         res = await worker_client.get("/api/v1/dashboard/worker")
-
         assert res.status_code == 200
         data = res.json()
         assert data["total_logs"] >= 1
         assert data["total_hours_worked"] >= 8.0
 
-    async def test_worker_with_no_assignment_has_null_project(self, worker_client: AsyncClient, seed_users, test_session_factory):
-        # worker not assigned to any project
-        res = await worker_client.get("/api/v1/dashboard/worker")
-
-        assert res.status_code == 200
-        assert res.json()["assigned_project"] is None
-
-    async def test_owner_can_access_worker_dashboard(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        # get_current_user — any authenticated user can hit /worker
+    async def test_owner_can_access_worker_dashboard(self, owner_client: AsyncClient):
         res = await owner_client.get("/api/v1/dashboard/worker")
-
         assert res.status_code == 200
 
     async def test_unauthenticated_cannot_access_worker_dashboard(self, unauth_client: AsyncClient):
         res = await unauth_client.get("/api/v1/dashboard/worker")
-
         assert res.status_code == 401
