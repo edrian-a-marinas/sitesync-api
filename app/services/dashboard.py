@@ -169,7 +169,11 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
 
 async def get_worker_dashboard(current_user: User, db: AsyncSession) -> WorkerDashboard:
     # Get assigned project
-    assignment = (await db.execute(select(WorkerAssignment).where(WorkerAssignment.user_id == current_user.id))).scalar_one_or_none()
+    assignment = (
+        (await db.execute(select(WorkerAssignment).where(WorkerAssignment.user_id == current_user.id).order_by(WorkerAssignment.id.desc())))
+        .scalars()
+        .first()
+    )
     project_name = None
     project_id = None
     if assignment:

@@ -137,7 +137,7 @@ def _get_file_url(s3_key: str) -> str:
 
 async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
     try:
-        result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc()))
+        result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc(), Report.week_start.desc()))
         reports = result.scalars().all()
         logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(reports)}")
         return [
