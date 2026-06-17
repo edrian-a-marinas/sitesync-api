@@ -5,14 +5,19 @@ class Settings(BaseSettings):
     # .env / secrets
     DATABASE_URL: str
     TEST_DATABASE_URL: str
+
     DEBUG: bool = False
     SECRET_KEY: str
-    REDIS_URL: str = "redis://localhost:6379/0"
-    REDIS_CACHE_URL: str = "redis://localhost:6379/1"
-    GROQ_API_KEY: str
-
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+
+    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_CACHE_URL: str = "redis://localhost:6379/1"
+
+    GROQ_API_KEY: str
+
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
+    ALLOWED_HOSTS: str = "localhost,127.0.0.1"
 
     # Constants / hard coded
     PROJECTS_TTL: int = 120
