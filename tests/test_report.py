@@ -112,7 +112,8 @@ class TestGetReports:
                         s3_key=f"reports/report_{d['project'].id}_2026-02-01.txt",
                     )
                 )
-        res = await owner_client.get(report_url(d["project"].id))
+        with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
+            res = await owner_client.get(report_url(d["project"].id))
         assert res.status_code == 200
         assert len(res.json()) >= 1
         data = res.json()[0]
@@ -135,7 +136,8 @@ class TestGetReports:
                         s3_key=f"reports/report_{d['assigned_project'].id}_2026-02-01.txt",
                     )
                 )
-        res = await manager_client.get(report_url(d["assigned_project"].id))
+        with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
+            res = await manager_client.get(report_url(d["assigned_project"].id))
         assert res.status_code == 200
         assert len(res.json()) >= 1
 
