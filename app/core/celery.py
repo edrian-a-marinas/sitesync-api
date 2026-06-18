@@ -29,5 +29,9 @@ celery_app.conf.update(
             "task": "retrain_ml_models",
             "schedule": crontab(hour=9, minute=0, day_of_week=1),
         },
+        "cleanup-old-reports-daily": {
+            "task": "cleanup_old_reports",
+            "schedule": crontab(hour=4, minute=0),
+        },
     },
 )
