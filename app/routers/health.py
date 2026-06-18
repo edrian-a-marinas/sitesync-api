@@ -85,18 +85,26 @@ async def groq_health():
     return {"status": "ok", "groq": results}
 
 
+"""
 @router.get("/s3")
 async def s3_health():
     try:
-        from app.services.s3 import get_s3_client
+        import boto3
+        from botocore.exceptions import BotoCoreError, ClientError
 
         def _check():
-            client = get_s3_client()
-            client.head_bucket(Bucket=settings.AWS_S3_BUCKET)
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                region_name=settings.AWS_REGION,
+            )
+            s3.head_bucket(Bucket=settings.AWS_S3_BUCKET)
 
         start = time.monotonic()
         await asyncio.get_event_loop().run_in_executor(None, _check)
         latency_ms = round((time.monotonic() - start) * 1000, 2)
         return {"status": "ok", "s3": "connected", "latency_ms": latency_ms}
+
     except Exception as e:
-        return {"status": "error", "s3": "disconnected", "detail": str(e)}
+        return {"status": "error", "s3": "disconnected", "detail": str(e)}"""
