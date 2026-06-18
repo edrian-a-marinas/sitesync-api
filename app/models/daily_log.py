@@ -19,7 +19,7 @@ class DailyLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-    submitted_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    submitted_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     log_date: Mapped[Date] = mapped_column(Date, nullable=False)
     weather_condition: Mapped[str | None] = mapped_column(String, nullable=True)
     work_accomplished: Mapped[str] = mapped_column(Text, nullable=False)

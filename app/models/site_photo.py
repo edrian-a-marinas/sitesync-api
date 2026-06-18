@@ -9,7 +9,7 @@ class SitePhoto(Base):
     __tablename__ = "site_photos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False)
+    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False, index=True)
     uploaded_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     filename: Mapped[str] = mapped_column(String, nullable=False)
     content_type: Mapped[str] = mapped_column(String, nullable=False)

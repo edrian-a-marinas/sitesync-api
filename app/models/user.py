@@ -9,7 +9,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    role_id: Mapped[int] = mapped_column(Integer, ForeignKey("roles.id"), nullable=False)
+    role_id: Mapped[int] = mapped_column(Integer, ForeignKey("roles.id"), nullable=False, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     first_name: Mapped[str] = mapped_column(String, nullable=False)
