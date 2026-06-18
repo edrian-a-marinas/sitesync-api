@@ -1,9 +1,13 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 from app.core.dependencies import require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
+from app.models.report import Report
 from app.models.user import User
 from app.schemas.report import ReportResponse
 from app.services.report import get_reports as _get_reports
@@ -24,6 +28,10 @@ async def trigger_report(
 ):
     if not await _verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    week_start = date.today() - timedelta(days=7)
+    existing = (await db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start))).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_200_OK, detail="Report already exists for this week")
     generate_weekly_report.delay(project_id, current_user.id)
     raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Report generation started")
 
