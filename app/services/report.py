@@ -125,12 +125,14 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
 def generate_report_sync(project_id: int, generated_by: int, db) -> Report | None:
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
-
     project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
     if not project:
         logger.error(f"REPORT | project_id={project_id} | status=failed | reason=project not found")
         return None
-
+    existing = db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start)).scalar_one_or_none()
+    if existing:
+        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=skipped | reason=already exists")
+        return existing
     try:
         total_hours = (
             db.execute(
@@ -204,7 +206,10 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
         return report
 
     except Exception as e:
-        logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
+        if "uq_report_project_week" in str(e):
+            logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=skipped | reason=already exists")
+        else:
+            logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
         return None
 
 
