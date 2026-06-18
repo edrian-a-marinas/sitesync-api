@@ -9,7 +9,7 @@ class Incident(Base):
     __tablename__ = "incidents"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False)
+    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False, index=True)
     reported_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     severity: Mapped[str] = mapped_column(String, nullable=False)  # Low, Medium, High

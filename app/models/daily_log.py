@@ -18,7 +18,7 @@ class DailyLog(Base):
     __table_args__ = (UniqueConstraint("project_id", "log_date"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     submitted_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     log_date: Mapped[Date] = mapped_column(Date, nullable=False)
     weather_condition: Mapped[str | None] = mapped_column(String, nullable=True)

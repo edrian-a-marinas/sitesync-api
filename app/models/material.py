@@ -7,7 +7,7 @@ from app.database import Base
 class Material(Base):
     __tablename__ = "materials"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False)
+    daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     quantity: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     unit: Mapped[str] = mapped_column(String, nullable=False)
