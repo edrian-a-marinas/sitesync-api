@@ -12,6 +12,7 @@ class SitePhoto(Base):
     daily_log_id: Mapped[int] = mapped_column(Integer, ForeignKey("daily_logs.id"), nullable=False)
     uploaded_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     filename: Mapped[str] = mapped_column(String, nullable=False)
+    content_type: Mapped[str] = mapped_column(String, nullable=False)
     s3_key: Mapped[str] = mapped_column(String, nullable=False)
     uploaded_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

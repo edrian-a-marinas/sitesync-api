@@ -9,6 +9,7 @@ from app.routers.material import router as material_router
 from app.routers.ml import router as ml_router
 from app.routers.project import router as project_router
 from app.routers.report import router as report_router
+from app.routers.site_photo import router as site_photo_router
 from app.routers.user import router as user_router
 
 all_routers = [
@@ -24,4 +25,5 @@ all_routers = [
     ai_query_router,
     report_router,
     ml_router,
+    site_photo_router,
 ]
