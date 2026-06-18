@@ -36,7 +36,7 @@ Each end-of-shift log is stored as a SQLAlchemy model in RDS PostgreSQL and cont
 
 ### File Storage
 
-Project Managers upload supporting documentation for daily logs including progress photos, material delivery receipts, inspection documents, and incident evidence. Files are stored as objects in AWS S3 via boto3, keeping binary data entirely outside the relational database. PostgreSQL stores only metadata such as filename, upload date, associated log reference, file type, and S3 object key through SQLAlchemy models. Alembic manages schema migrations for file and photo metadata tables.
+Project Managers upload supporting documentation for daily logs including progress photos, material delivery receipts, inspection documents, and incident evidence. Allowed file types are JPEG, PNG, WebP, and PDF. Files are rejected if they exceed 10MB. Files are stored as objects in AWS S3 via boto3, keeping binary data entirely outside the relational database. PostgreSQL stores only metadata such as filename, upload date, associated log reference, file type, and S3 object key through SQLAlchemy models. Alembic manages schema migrations for file and photo metadata tables.
 
 ### Background Report Generation
 
