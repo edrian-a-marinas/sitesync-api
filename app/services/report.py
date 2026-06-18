@@ -1,9 +1,6 @@
-import io
 import logging
 from datetime import date, timedelta
 
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -15,6 +12,7 @@ from app.models.material import Material
 from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
 from app.models.user import User
+from app.utils.pdf_builder import build_report_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -90,20 +88,16 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
             .all()
         )
 
-        buffer = io.BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(50, 800, "SITESYNC WEEKLY REPORT")
-        pdf.setFont("Helvetica", 12)
-        pdf.drawString(50, 770, f"Project: {project.name}")
-        pdf.drawString(50, 750, f"Period: {week_start} to {week_end}")
-        pdf.drawString(50, 720, f"Total Logs Submitted: {len(logs)}")
-        pdf.drawString(50, 700, f"Total Hours Worked: {float(total_hours)}")
-        pdf.drawString(50, 680, f"Total Material Cost: {float(total_material_cost)}")
-        pdf.drawString(50, 660, f"Total Incidents: {len(incidents)}")
-        pdf.drawString(50, 640, f"Open Incidents: {len([i for i in incidents if i.status == 'Open'])}")
-        pdf.save()
-        pdf_bytes = buffer.getvalue()
+        pdf_bytes = build_report_pdf(
+            project_name=project.name,
+            week_start=week_start,
+            week_end=week_end,
+            total_hours=float(total_hours),
+            total_material_cost=float(total_material_cost),
+            log_count=len(logs),
+            incident_count=len(incidents),
+            open_incident_count=len([i for i in incidents if i.status == "Open"]),
+        )
 
         from app.services.s3 import upload_file
 
@@ -129,10 +123,6 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
 
 
 def generate_report_sync(project_id: int, generated_by: int, db) -> Report | None:
-    from datetime import date, timedelta
-
-    from sqlalchemy import func
-
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
 
@@ -184,20 +174,16 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
             .all()
         )
 
-        buffer = io.BytesIO()
-        pdf = canvas.Canvas(buffer, pagesize=A4)
-        pdf.setFont("Helvetica-Bold", 16)
-        pdf.drawString(50, 800, "SITESYNC WEEKLY REPORT")
-        pdf.setFont("Helvetica", 12)
-        pdf.drawString(50, 770, f"Project: {project.name}")
-        pdf.drawString(50, 750, f"Period: {week_start} to {week_end}")
-        pdf.drawString(50, 720, f"Total Logs Submitted: {len(logs)}")
-        pdf.drawString(50, 700, f"Total Hours Worked: {float(total_hours)}")
-        pdf.drawString(50, 680, f"Total Material Cost: {float(total_material_cost)}")
-        pdf.drawString(50, 660, f"Total Incidents: {len(incidents)}")
-        pdf.drawString(50, 640, f"Open Incidents: {len([i for i in incidents if i.status == 'Open'])}")
-        pdf.save()
-        pdf_bytes = buffer.getvalue()
+        pdf_bytes = build_report_pdf(
+            project_name=project.name,
+            week_start=week_start,
+            week_end=week_end,
+            total_hours=float(total_hours),
+            total_material_cost=float(total_material_cost),
+            log_count=len(logs),
+            incident_count=len(incidents),
+            open_incident_count=len([i for i in incidents if i.status == "Open"]),
+        )
 
         from app.services.s3 import upload_file
 
