@@ -20,6 +20,7 @@
 | **EC2** | Hosts the FastAPI application and background workers celery.  |
 | **RDS** | PostgreSQL database for all project, user, and site log data. |
 | **ALB** | Distributes traffic across multiple EC2 instances. |
+| **IAM** | Manages least-privilege credentials for backend S3, RDS, and EC2 access. |
 
 ### Authentication & User Layer
 
