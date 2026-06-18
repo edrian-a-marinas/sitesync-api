@@ -39,6 +39,20 @@ def trigger_all_weekly_reports():
     _trigger_all_weekly_reports()
 
 
+@celery_app.task(name="cleanup_old_reports")
+def cleanup_old_reports():
+    logger.info("REPORT_CLEANUP | task=started")
+    _cleanup_old_reports()
+
+
+def _cleanup_old_reports():
+    with make_celery_sync_session()() as db:
+        try:
+            report.cleanup_old_reports_sync(db)
+        except Exception as e:
+            logger.error(f"REPORT_CLEANUP | status=failed | reason={str(e)}")
+
+
 def _trigger_all_weekly_reports():
     with make_celery_sync_session()() as db:
         projects = db.execute(select(Project).where(Project.status == "Active")).scalars().all()
