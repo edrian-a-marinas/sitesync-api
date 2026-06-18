@@ -1,4 +1,4 @@
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -18,3 +18,5 @@ class Report(Base):
 
     project: Mapped["Project"] = relationship("Project", back_populates="reports")
     generated_by_user: Mapped["User"] = relationship("User", back_populates="reports")
+
+    __table_args__ = (UniqueConstraint("project_id", "week_start", name="uq_report_project_week"),)
