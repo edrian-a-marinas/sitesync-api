@@ -5,6 +5,7 @@ import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import delete
 
+from app.core.cache import delete_cache
 from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
 
@@ -112,6 +113,7 @@ class TestGetReports:
                         s3_key=f"reports/report_{d['project'].id}_2026-02-01.txt",
                     )
                 )
+        await delete_cache(f"report:list:{d['project'].id}")
         with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await owner_client.get(report_url(d["project"].id))
         assert res.status_code == 200
@@ -136,6 +138,7 @@ class TestGetReports:
                         s3_key=f"reports/report_{d['assigned_project'].id}_2026-02-01.txt",
                     )
                 )
+        await delete_cache(f"report:list:{d['assigned_project'].id}")
         with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await manager_client.get(report_url(d["assigned_project"].id))
         assert res.status_code == 200
