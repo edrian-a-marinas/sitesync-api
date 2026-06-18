@@ -1,17 +1,13 @@
-from datetime import date, timedelta
-
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.dependencies import require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
-from app.models.report import Report
 from app.models.user import User
 from app.schemas.report import ReportResponse
 from app.services.report import get_reports as _get_reports
-from app.services.report import verify_project_access as _verify_project_access
+from app.services.report import report_exists_this_week, validate_project_exists, verify_project_access
 from app.tasks.report import generate_weekly_report
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -26,11 +22,11 @@ async def trigger_report(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    if not await _verify_project_access(project_id, current_user, db):
+    if not await validate_project_exists(project_id, db):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    week_start = date.today() - timedelta(days=7)
-    existing = (await db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start))).scalar_one_or_none()
-    if existing:
+    if await report_exists_this_week(project_id, db):
         raise HTTPException(status_code=status.HTTP_200_OK, detail="Report already exists for this week")
     generate_weekly_report.delay(project_id, current_user.id)
     raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Report generation started")
@@ -45,6 +41,6 @@ async def get_reports(
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    if not await _verify_project_access(project_id, current_user, db):
+    if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     return await _get_reports(project_id, db)
