@@ -7,7 +7,7 @@ from app.core.logging import http_exception_handler, validation_exception_handle
 from app.core.middleware import configure_middlewares
 from app.core.settings import settings
 from app.routers import all_routers
-from app.routers.health import health_router
+from app.routers.health import router as health_router
 
 app = FastAPI(**settings.app_config)
 
