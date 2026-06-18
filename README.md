@@ -52,7 +52,11 @@ SiteSync runs a dedicated ML pipeline that trains predictive models on accumulat
 
 ### Caching
 
-Redis stores frequently accessed responses including project lists, dashboard KPIs, attendance summaries, material consumption statistics, budget reports, and AI query metadata. Cached responses use TTL expiration together with mutation-based invalidation strategies. React Query manages client-side cache synchronization, ensuring stale data is automatically revalidated after any project update, assignment change, daily log submission, attendance update, or report generation event without requiring manual refreshes.
+Redis stores frequently accessed responses including project lists, dashboard KPIs, attendance summaries, material consumption statistics, budget reports, and AI query metadata. Cached responses use TTL expiration together with mutation-based invalidation strategies.
+
+Weekly report generation is deduplicated at the database and cache level — a report already generated for a project's current week is detected before any new PDF is built, so multiple Owners or Project Managers requesting the same weekly report are served the same generated file instead of triggering duplicate Celery jobs or duplicate S3 uploads. Report existence checks follow a cache-first read pattern: a cache hit answers the request without touching PostgreSQL at all, a cache miss falls through to the database and the result is written back to cache for subsequent requests, keeping repeated checks from hitting the database every time. Report list responses follow the same cache-first pattern and are invalidated immediately once a new report finishes generating, ensuring the next fetch reflects the latest report without a stale read while still avoiding unnecessary database load between mutations.
+
+React Query manages client-side cache synchronization, ensuring stale data is automatically revalidated after any project update, assignment change, daily log submission, attendance update, or report generation event without requiring manual refreshes.
 
 ### Dashboard & KPIs
 
@@ -60,9 +64,7 @@ The Owner dashboard provides organization-wide visibility across all active proj
 
 ### Storage & Hosting
 
-FastAPI, Celery workers, and Redis are containerized with Docker and orchestrated locally through docker-compose during development. The production environment runs on AWS EC2. Site photos, uploaded documents, and generated PDF reports are stored in AWS S3, while all relational data is stored in AWS RDS PostgreSQL. Redis serves both as the caching layer and Celery message broker. After load testing with Locust identifies single-instance bottlenecks under approximately 500 concurrent users, an AWS Application Load Balancer (ALB) is placed in front of multiple EC2 instances to provide horizontal scaling and high availability.
-
-GitHub Actions runs the full Pytest and pytest-asyncio test suite on every push, covering API endpoints, Celery tasks, role-based access control, AI query validation, database operations, report generation workflows, and file upload functionality. Failed tests block deployment and prevent broken code from reaching production.
+FastAPI, the Celery worker, the Celery Beat scheduler, and Redis are each containerized as separate services and orchestrated locally through docker-compose during development. Celery Beat runs as its own dedicated container distinct from the worker, since Beat is solely responsible for triggering scheduled tasks on their configured cron intervals while the worker executes them — running both in a single process would risk duplicate task scheduling. The production environment runs on AWS EC2. Site photos, uploaded documents, and generated PDF reports are stored in AWS S3, while all relational data is stored in AWS RDS PostgreSQL. Redis serves both as the caching layer and Celery message broker. After load testing with Locust identifies single-instance bottlenecks under approximately 500 concurrent users, an AWS Application Load Balancer (ALB) is placed in front of multiple EC2 instances to provide horizontal scaling and high availability.
 
 ### Frontend
 

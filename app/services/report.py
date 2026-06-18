@@ -1,5 +1,5 @@
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,14 +12,15 @@ from app.models.incident import Incident
 from app.models.material import Material
 from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
+from app.models.role import Role
 from app.models.user import User
+from app.services.s3 import delete_file, generate_presigned_url, upload_file
 from app.utils.pdf_builder import build_report_pdf
 
 logger = logging.getLogger(__name__)
 
 
 async def verify_project_access(project_id: int, current_user: User, db: AsyncSession) -> bool:
-    from app.models.role import Role
 
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     if role and role.name == "owner":
@@ -117,8 +118,6 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
             open_incident_count=len([i for i in incidents if i.status == "Open"]),
         )
 
-        from app.services.s3 import upload_file
-
         filename = f"reports/report_{project_id}_{week_start}.pdf"
         upload_file(pdf_bytes, filename, "application/pdf")
 
@@ -205,8 +204,6 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
             open_incident_count=len([i for i in incidents if i.status == "Open"]),
         )
 
-        from app.services.s3 import upload_file
-
         filename = f"reports/report_{project_id}_{week_start}.pdf"
         upload_file(pdf_bytes, filename, "application/pdf")
 
@@ -232,9 +229,29 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
 
 
 def _get_file_url(s3_key: str) -> str:
-    from app.services.s3 import generate_presigned_url
 
     return generate_presigned_url(s3_key)
+
+
+def cleanup_old_reports_sync(db) -> int:
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=14)
+    old_reports = db.execute(select(Report).where(Report.created_at < cutoff)).scalars().all()
+
+    deleted_count = 0
+    for r in old_reports:
+        try:
+            delete_file(r.s3_key)
+            db.delete(r)
+            db.commit()
+            deleted_count += 1
+            logger.info(f"REPORT_CLEANUP | report_id={r.id} | project_id={r.project_id} | s3_key={r.s3_key} | status=deleted")
+        except Exception as e:
+            db.rollback()
+            logger.error(f"REPORT_CLEANUP | report_id={r.id} | project_id={r.project_id} | status=failed | reason={str(e)}")
+
+    logger.info(f"REPORT_CLEANUP | total_checked={len(old_reports)} | total_deleted={deleted_count} | cutoff={cutoff.date()}")
+    return deleted_count
 
 
 async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
