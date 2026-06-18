@@ -114,7 +114,7 @@ class TestGetReports:
                     )
                 )
         await delete_cache(f"report:list:{d['project'].id}")
-        with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
+        with patch("app.services.report.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await owner_client.get(report_url(d["project"].id))
         assert res.status_code == 200
         assert len(res.json()) >= 1
@@ -139,7 +139,7 @@ class TestGetReports:
                     )
                 )
         await delete_cache(f"report:list:{d['assigned_project'].id}")
-        with patch("app.services.s3.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
+        with patch("app.services.report.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await manager_client.get(report_url(d["assigned_project"].id))
         assert res.status_code == 200
         assert len(res.json()) >= 1
