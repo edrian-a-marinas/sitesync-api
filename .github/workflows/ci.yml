@@ -64,8 +64,7 @@ jobs:
           ALGORITHM: HS256
           ACCESS_TOKEN_EXPIRE_MINUTES: "30"
         run: pytest --tb=short -q
-
-deploy:
+  deploy:
     needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
