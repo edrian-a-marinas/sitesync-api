@@ -122,10 +122,11 @@ class TestUploadSitePhoto:
         project = await create_project(test_session_factory, seed_users["owner"].id)
         log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
         with patch("app.services.site_photo.upload_file", return_value="site_photos/1/photo.png"):
-            res = await owner_client.post(
-                site_photo_url(project.id, log.id),
-                files=_upload_files(),
-            )
+            with patch("app.services.site_photo.generate_presigned_url", return_value="https://fake-url.com/photo.png"):
+                res = await owner_client.post(
+                    site_photo_url(project.id, log.id),
+                    files=_upload_files(),
+                )
         assert res.status_code == 201
         data = res.json()
         assert data["daily_log_id"] == log.id
@@ -138,10 +139,11 @@ class TestUploadSitePhoto:
         log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
         await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
         with patch("app.services.site_photo.upload_file", return_value="site_photos/1/photo.png"):
-            res = await manager_client.post(
-                site_photo_url(project.id, log.id),
-                files=_upload_files(),
-            )
+            with patch("app.services.site_photo.generate_presigned_url", return_value="https://fake-url.com/photo.png"):
+                res = await manager_client.post(
+                    site_photo_url(project.id, log.id),
+                    files=_upload_files(),
+                )
         assert res.status_code == 201
         assert res.json()["filename"] == "photo.png"
 
@@ -208,10 +210,11 @@ class TestUploadSitePhoto:
         log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
         pdf_bytes = b"%PDF-1.4 fake pdf content"
         with patch("app.services.site_photo.upload_file", return_value="site_photos/1/doc.pdf"):
-            res = await owner_client.post(
-                site_photo_url(project.id, log.id),
-                files=_upload_files(filename="doc.pdf", content_type="application/pdf", data=pdf_bytes),
-            )
+            with patch("app.services.site_photo.generate_presigned_url", return_value="https://fake-url.com/doc.pdf"):
+                res = await owner_client.post(
+                    site_photo_url(project.id, log.id),
+                    files=_upload_files(filename="doc.pdf", content_type="application/pdf", data=pdf_bytes),
+                )
         assert res.status_code == 201
         assert res.json()["content_type"] == "application/pdf"
 
