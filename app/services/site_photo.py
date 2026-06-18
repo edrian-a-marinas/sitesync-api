@@ -74,13 +74,14 @@ async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, curr
         logger.warning(f"SITE_PHOTO | log_id={log_id} | uploaded_by={current_user.id} | role={role_name} | status=failed | reason={str(e)}")
         raise
 
-    s3_key = f"site_photos/{log_id}/{file.filename}"
+    filename = file.filename or "upload"
+    s3_key = f"site_photos/{log_id}/{filename}"
     upload_file(contents, s3_key, file.content_type)
 
     photo = SitePhoto(
         daily_log_id=log_id,
         uploaded_by=current_user.id,
-        filename=file.filename,
+        filename=filename,
         content_type=file.content_type,
         s3_key=s3_key,
     )
