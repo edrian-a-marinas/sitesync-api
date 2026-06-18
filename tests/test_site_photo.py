@@ -1,3 +1,4 @@
+import io
 from datetime import date
 from unittest.mock import patch
 
@@ -68,7 +69,8 @@ def _png_file():
 
 
 def _upload_files(filename="photo.png", content_type="image/png", data=None):
-    return {"file": (filename, data or _png_file(), content_type)}
+    file_data = data or _png_file()
+    return {"file": (filename, io.BytesIO(file_data), content_type)}
 
 
 # ---------------------------------------------------------------------------
