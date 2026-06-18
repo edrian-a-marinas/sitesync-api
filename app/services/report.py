@@ -1,7 +1,9 @@
+import io
 import logging
-import os
 from datetime import date, timedelta
 
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -17,8 +19,11 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 
-async def _verify_project_access(project_id: int, current_user: User, db: AsyncSession) -> bool:
-    if current_user.role.name == "owner":
+async def verify_project_access(project_id: int, current_user: User, db: AsyncSession) -> bool:
+    from app.models.role import Role
+
+    role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    if role and role.name == "owner":
         return True
     assigned = (
         await db.execute(
@@ -85,22 +90,25 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
             .all()
         )
 
-        report_content = f"""
-SITESYNC WEEKLY REPORT
-Project: {project.name}
-Period: {week_start} to {week_end}
-------------------------------
-Total Logs Submitted: {len(logs)}
-Total Hours Worked: {float(total_hours)}
-Total Material Cost: {float(total_material_cost)}
-Total Incidents: {len(incidents)}
-Open Incidents: {len([i for i in incidents if i.status == "Open"])}
-        """
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        pdf.setFont("Helvetica-Bold", 16)
+        pdf.drawString(50, 800, "SITESYNC WEEKLY REPORT")
+        pdf.setFont("Helvetica", 12)
+        pdf.drawString(50, 770, f"Project: {project.name}")
+        pdf.drawString(50, 750, f"Period: {week_start} to {week_end}")
+        pdf.drawString(50, 720, f"Total Logs Submitted: {len(logs)}")
+        pdf.drawString(50, 700, f"Total Hours Worked: {float(total_hours)}")
+        pdf.drawString(50, 680, f"Total Material Cost: {float(total_material_cost)}")
+        pdf.drawString(50, 660, f"Total Incidents: {len(incidents)}")
+        pdf.drawString(50, 640, f"Open Incidents: {len([i for i in incidents if i.status == 'Open'])}")
+        pdf.save()
+        pdf_bytes = buffer.getvalue()
 
-        filename = f"reports/report_{project_id}_{week_start}.txt"
-        os.makedirs("reports", exist_ok=True)
-        with open(filename, "w") as f:
-            f.write(report_content)
+        from app.services.s3 import upload_file
+
+        filename = f"reports/report_{project_id}_{week_start}.pdf"
+        upload_file(pdf_bytes, filename, "application/pdf")
 
         report = Report(
             project_id=project_id,
@@ -120,19 +128,104 @@ Open Incidents: {len([i for i in incidents if i.status == "Open"])}
         return None
 
 
+def generate_report_sync(project_id: int, generated_by: int, db) -> Report | None:
+    from datetime import date, timedelta
+
+    from sqlalchemy import func
+
+    week_end = date.today()
+    week_start = week_end - timedelta(days=7)
+
+    project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+    if not project:
+        logger.error(f"REPORT | project_id={project_id} | status=failed | reason=project not found")
+        return None
+
+    try:
+        total_hours = (
+            db.execute(
+                select(func.sum(Attendance.hours_worked))
+                .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+                .where(DailyLog.project_id == project_id)
+                .where(DailyLog.log_date >= week_start)
+                .where(DailyLog.log_date <= week_end)
+            ).scalar()
+            or 0.0
+        )
+
+        total_material_cost = (
+            db.execute(
+                select(func.sum(Material.total_cost))
+                .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                .where(DailyLog.project_id == project_id)
+                .where(DailyLog.log_date >= week_start)
+                .where(DailyLog.log_date <= week_end)
+            ).scalar()
+            or 0.0
+        )
+
+        logs = (
+            db.execute(
+                select(DailyLog).where(DailyLog.project_id == project_id).where(DailyLog.log_date >= week_start).where(DailyLog.log_date <= week_end)
+            )
+            .scalars()
+            .all()
+        )
+
+        incidents = (
+            db.execute(
+                select(Incident)
+                .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+                .where(DailyLog.project_id == project_id)
+                .where(DailyLog.log_date >= week_start)
+                .where(DailyLog.log_date <= week_end)
+            )
+            .scalars()
+            .all()
+        )
+
+        buffer = io.BytesIO()
+        pdf = canvas.Canvas(buffer, pagesize=A4)
+        pdf.setFont("Helvetica-Bold", 16)
+        pdf.drawString(50, 800, "SITESYNC WEEKLY REPORT")
+        pdf.setFont("Helvetica", 12)
+        pdf.drawString(50, 770, f"Project: {project.name}")
+        pdf.drawString(50, 750, f"Period: {week_start} to {week_end}")
+        pdf.drawString(50, 720, f"Total Logs Submitted: {len(logs)}")
+        pdf.drawString(50, 700, f"Total Hours Worked: {float(total_hours)}")
+        pdf.drawString(50, 680, f"Total Material Cost: {float(total_material_cost)}")
+        pdf.drawString(50, 660, f"Total Incidents: {len(incidents)}")
+        pdf.drawString(50, 640, f"Open Incidents: {len([i for i in incidents if i.status == 'Open'])}")
+        pdf.save()
+        pdf_bytes = buffer.getvalue()
+
+        from app.services.s3 import upload_file
+
+        filename = f"reports/report_{project_id}_{week_start}.pdf"
+        upload_file(pdf_bytes, filename, "application/pdf")
+
+        report = Report(
+            project_id=project_id,
+            generated_by=generated_by,
+            week_start=week_start,
+            week_end=week_end,
+            s3_key=filename,
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=success")
+        return report
+
+    except Exception as e:
+        logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
+        return None
+
+
 def _get_file_url(s3_key: str) -> str:
-    # Local dev: return file path directly
-    # In future with AWS S3, replace this with a signed URL:
-    # """
-    # import boto3
-    # s3 = boto3.client("s3")
-    # return s3.generate_presigned_url(
-    #     "get_object",
-    #     Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
-    #     ExpiresIn=3600,
-    # )
-    # """
-    return s3_key
+    from app.services.s3 import generate_presigned_url
+
+    return generate_presigned_url(s3_key)
 
 
 async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
