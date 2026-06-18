@@ -6,15 +6,15 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.report import ReportResponse
-from app.services.report import _verify_project_access
 from app.services.report import get_reports as _get_reports
+from app.services.report import verify_project_access as _verify_project_access
 from app.tasks.report import generate_weekly_report
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
 
 # ==================== Tasks ====================
-@router.post("/{project_id}/generate", response_model=ReportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{project_id}/generate", status_code=status.HTTP_202_ACCEPTED)
 @limiter.limit("5/minute")
 async def trigger_report(
     project_id: int,
