@@ -19,7 +19,15 @@ def generate_weekly_report(project_id: int, generated_by: int):
 def _generate_weekly_report(project_id: int, generated_by: int):
     with make_celery_sync_session()() as db:
         try:
-            report.generate_report_sync(project_id, generated_by, db)
+            result = report.generate_report_sync(project_id, generated_by, db)
+            if result:
+                import redis
+
+                from app.core.settings import settings
+
+                r = redis.from_url(settings.REDIS_CACHE_URL, decode_responses=True)
+                r.delete(f"report:list:{project_id}")
+                logger.info(f"REPORT | project_id={project_id} | cache=invalidated")
             logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | status=done")
         except Exception as e:
             logger.error(f"REPORT | project_id={project_id} | user_id={generated_by} | status=failed | reason={str(e)}")

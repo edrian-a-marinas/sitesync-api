@@ -5,6 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import get_cache, set_cache
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
@@ -29,6 +30,23 @@ async def verify_project_access(project_id: int, current_user: User, db: AsyncSe
         )
     ).scalar_one_or_none()
     return assigned is not None
+
+
+async def validate_project_exists(project_id: int, db: AsyncSession) -> bool:
+    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    return project is not None
+
+
+async def report_exists_this_week(project_id: int, db: AsyncSession) -> bool:
+    week_start = date.today() - timedelta(days=7)
+    cache_key = f"report:exists:{project_id}:{week_start}"
+    if await get_cache(cache_key):
+        return True
+    existing = (await db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start))).scalar_one_or_none()
+    if existing:
+        await set_cache(cache_key, True, ttl=86400)
+        return True
+    return False
 
 
 async def generate_report(project_id: int, generated_by: int, db: AsyncSession) -> Report | None:
@@ -220,23 +238,30 @@ def _get_file_url(s3_key: str) -> str:
 
 
 async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
+    cache_key = f"report:list:{project_id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        logger.info(f"REPORT | get_reports | project_id={project_id} | source=cache")
+        return cached
     try:
         result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc(), Report.week_start.desc()))
         reports = result.scalars().all()
-        logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(reports)}")
-        return [
+        logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(reports)} | source=db")
+        data = [
             {
                 "id": r.id,
                 "project_id": r.project_id,
                 "generated_by": r.generated_by,
-                "week_start": r.week_start,
-                "week_end": r.week_end,
+                "week_start": str(r.week_start),
+                "week_end": str(r.week_end),
                 "s3_key": r.s3_key,
                 "file_url": _get_file_url(r.s3_key),
-                "created_at": r.created_at,
+                "created_at": str(r.created_at),
             }
             for r in reports
         ]
+        await set_cache(cache_key, data, ttl=3600)
+        return data
     except Exception as e:
         logger.error(f"REPORT | get_reports | project_id={project_id} | error={str(e)}")
         return []
