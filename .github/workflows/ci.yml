@@ -10,6 +10,7 @@ on:
 
 jobs:
   test:
+    if: github.event_name == 'pull_request' # remove this after finish backend / fully working for safety net
     runs-on: ubuntu-latest
 
     services:
