@@ -16,3 +16,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     logger.warning(f"HTTP | ip={request.client.host} | path={request.url.path} | status={exc.status_code} | detail={exc.detail}")
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+def get_db_label(db_url: str) -> str:
+    if "localhost" in db_url or "127.0.0.1" in db_url:
+        return "DEV"
+    return "PROD"
