@@ -4,6 +4,7 @@ from datetime import date
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from app.core.cache import get_cache, set_cache
 from app.core.settings import settings
@@ -94,6 +95,9 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
     if not project:
         logger.warning(f"MANAGER_DASHBOARD | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
+
+    current_user = (await db.execute(select(User).options(selectinload(User.role)).where(User.id == current_user.id))).scalar_one()
+
     if current_user.role.name != "owner":
         assigned = (
             await db.execute(
