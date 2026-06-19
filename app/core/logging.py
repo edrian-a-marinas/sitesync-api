@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.settings import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -18,7 +20,22 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
-def get_db_label(db_url: str) -> str:
-    if "localhost" in db_url or "127.0.0.1" in db_url:
+def get_db_label() -> str:
+    url = settings.DATABASE_URL
+    if "localhost" in url or "127.0.0.1" in url:
+        return "DEV"
+    return "PROD"
+
+
+def get_redis_label() -> str:
+    url = settings.REDIS_URL
+    if "localhost" in url or "127.0.0.1" in url:
+        return "DEV"
+    return "PROD"
+
+
+def get_cache_label() -> str:
+    url = settings.REDIS_CACHE_URL
+    if "localhost" in url or "127.0.0.1" in url:
         return "DEV"
     return "PROD"

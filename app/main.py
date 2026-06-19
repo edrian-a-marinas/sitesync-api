@@ -12,7 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.limiter import configure_limiter
-from app.core.logging import get_db_label, http_exception_handler, validation_exception_handler
+from app.core.logging import get_cache_label, get_db_label, get_redis_label, http_exception_handler, validation_exception_handler
 from app.core.middleware import configure_middlewares
 from app.core.settings import settings
 from app.routers import all_routers
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(
-        f"APP | database={get_db_label(settings.DATABASE_URL)} | ratelimit_enabled={settings.RATELIMIT_ENABLED} | debug={settings.DEBUG} | env loaded"
-    )
+    logger.info(f"APP | ratelimit_enabled={settings.RATELIMIT_ENABLED} | debug={settings.DEBUG} | env loaded")
+
+    logger.info(f"Server | DB={get_db_label()} | broker={get_redis_label()} | cache={get_cache_label()} | env loaded")
     yield
 
 
