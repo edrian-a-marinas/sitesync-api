@@ -70,12 +70,23 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Deploy to EC2
+      - name: Deploy to EC2 Instance 1
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/sitesync-api
+            git pull origin main
+            docker compose up -d --build
+
+      - name: Deploy to EC2 Instance 2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST_2 }}
+          username: ${{ secrets.EC2_USER_2 }}
+          key: ${{ secrets.EC2_SSH_KEY_2 }}
           script: |
             cd ~/sitesync-api
             git pull origin main
