@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     TEST_DATABASE_URL: str
 
     DEBUG: bool = False
+    RATELIMIT_ENABLED: bool = Field(default=True)
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
@@ -26,8 +27,6 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION: Optional[str] = None
     AWS_S3_BUCKET: Optional[str] = None
-
-    RATELIMIT_ENABLED: bool = Field(default=True)
 
     # Constants / hard coded
     PROJECTS_TTL: int = 120
