@@ -1,11 +1,16 @@
+import asyncio
 import logging
 
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.cache import redis_client
+from app.core.celery import celery_app
 from app.core.settings import settings
+from app.database import AsyncSessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -39,3 +44,31 @@ def get_cache_label() -> str:
     if "localhost" in url or "127.0.0.1" in url:
         return "DEV"
     return "PROD"
+
+
+async def check_connections() -> dict:
+    results = {}
+
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        results["db"] = "connected"
+    except Exception:
+        results["db"] = "unreachable"
+
+    try:
+        await redis_client.ping()
+        results["broker"] = "connected"
+        results["cache"] = "connected"
+    except Exception:
+        results["broker"] = "unreachable"
+        results["cache"] = "unreachable"
+
+    try:
+        inspector = celery_app.control.inspect(timeout=2.0)
+        result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
+        results["celery"] = f"connected ({len(result)} worker(s))" if result else "no workers"
+    except Exception:
+        results["celery"] = "unreachable"
+
+    return results
