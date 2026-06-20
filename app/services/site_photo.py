@@ -1,4 +1,6 @@
 import logging
+import uuid
+from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,8 +76,11 @@ async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, curr
         logger.warning(f"SITE_PHOTO | log_id={log_id} | uploaded_by={current_user.id} | role={role_name} | status=failed | reason={str(e)}")
         raise
 
-    filename = file.filename or "upload"
-    s3_key = f"site_photos/{log_id}/{filename}"
+    original_name = Path(file.filename or "upload").name  # strips any path traversal
+    ext = Path(original_name).suffix.lower()
+    safe_filename = f"{uuid.uuid4().hex}{ext}"
+    s3_key = f"site_photos/{log_id}/{safe_filename}"
+    filename = safe_filename
     upload_file(contents, s3_key, file.content_type)
 
     photo = SitePhoto(

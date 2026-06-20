@@ -1,5 +1,4 @@
 ## 📝 Summary
-<!-- What did you change and why? -->
 
 ## 🔧 Type of Change
 - [ ] ✨ New Feature
@@ -13,3 +12,4 @@
 - [ ] 🤖 CI/CD
 - [ ] ⏪ Revert
 - [ ] ⚡ Performance
+- [ ] 🔒 Security
