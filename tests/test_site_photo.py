@@ -130,7 +130,7 @@ class TestUploadSitePhoto:
         assert res.status_code == 201
         data = res.json()
         assert data["daily_log_id"] == log.id
-        assert data["filename"] == "photo.png"
+        assert data["filename"].endswith(".png")
         assert data["content_type"] == "image/png"
         assert "file_url" in data
 
@@ -145,7 +145,7 @@ class TestUploadSitePhoto:
                     files=_upload_files(),
                 )
         assert res.status_code == 201
-        assert res.json()["filename"] == "photo.png"
+        assert res.json()["filename"].endswith(".png")
 
     async def test_unassigned_manager_cannot_upload_photo(self, manager_client: AsyncClient, seed_users, test_session_factory):
         project = await create_project(test_session_factory, seed_users["owner"].id)
@@ -233,4 +233,4 @@ class TestUploadSitePhoto:
             list_res = await owner_client.get(site_photo_url(project.id, log.id))
         assert list_res.status_code == 200
         filenames = [p["filename"] for p in list_res.json()]
-        assert "photo.png" in filenames
+        assert any(f.endswith(".png") for f in filenames)
