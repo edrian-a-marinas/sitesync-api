@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import delete_cache
 from app.models.material import Material
 from app.models.project import ProjectAssignment
 from app.models.role import Role
@@ -54,6 +55,9 @@ async def create_material(project_id: int, log_id: int, data: MaterialCreate, cu
     db.add(material)
     await db.commit()
     await db.refresh(material)
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
     logger.info(f"MATERIAL_CREATE | log_id={log_id} | material_id={material.id} | submitted_by={current_user.id} | status=success")
     return material
 
@@ -73,5 +77,8 @@ async def update_material(
         setattr(material, field, value)
     await db.commit()
     await db.refresh(material)
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
     logger.info(f"MATERIAL_UPDATE | log_id={log_id} | material_id={material_id} | updated_by={current_user.id} | status=success")
     return material

@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import delete_cache
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment, WorkerAssignment
@@ -60,6 +61,9 @@ async def create_attendance(project_id: int, log_id: int, data: AttendanceCreate
     db.add(attendance)
     await db.commit()
     await db.refresh(attendance)
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
     logger.info(f"ATTENDANCE | worker_id={data.worker_id} | log_id={log_id} | submitted_by={current_user.id} | status=success")
     return attendance
 
