@@ -3,6 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import delete_cache
 from app.models.incident import Incident
 from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -52,6 +53,9 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
     db.add(incident)
     await db.commit()
     await db.refresh(incident)
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
     logger.info(
         f"INCIDENT_CREATE | log_id={log_id} | incident_id={incident.id} | reported_by={current_user.id} | severity={data.severity} | status=success"
     )
@@ -73,5 +77,8 @@ async def update_incident(
         setattr(incident, field, value)
     await db.commit()
     await db.refresh(incident)
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
     logger.info(f"INCIDENT_UPDATE | log_id={log_id} | incident_id={incident_id} | updated_by={current_user.id} | status=success")
     return incident

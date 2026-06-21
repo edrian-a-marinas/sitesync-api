@@ -58,6 +58,7 @@ async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: 
     await db.commit()
     await db.refresh(log)
     await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
     logger.info(f"LOG_CREATE | project_id={project_id} | log_id={log.id} | submitted_by={current_user.id} | status=success")
     return log
@@ -72,6 +73,7 @@ async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, c
     await db.commit()
     await db.refresh(log)
     await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
     logger.info(f"LOG_UPDATE | project_id={project_id} | log_id={log_id} | updated_by={current_user.id} | status=success")
     return log
