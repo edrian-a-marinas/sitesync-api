@@ -84,6 +84,47 @@ async def seed_manager_dashboard(test_session_factory, seed_users):
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seed_manager_aggregate_dashboard(test_session_factory, seed_users):
+    async with test_session_factory() as session:
+        async with session.begin():
+            p1 = Project(
+                owner_id=seed_users["owner"].id,
+                name="Agg Dash Project A",
+                location="Manila",
+                total_budget=1_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
+            )
+            p2 = Project(
+                owner_id=seed_users["owner"].id,
+                name="Agg Dash Project B",
+                location="Manila",
+                total_budget=2_000_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
+            )
+            session.add_all([p1, p2])
+            await session.flush()
+            a1 = ProjectAssignment(project_id=p1.id, user_id=seed_users["manager"].id)
+            a2 = ProjectAssignment(project_id=p2.id, user_id=seed_users["manager"].id)
+            log1 = DailyLog(project_id=p1.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 1, 1), work_accomplished="Work A")
+            log2 = DailyLog(project_id=p2.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 1, 2), work_accomplished="Work B")
+            session.add_all([a1, a2, log1, log2])
+            await session.flush()
+            session.add(Material(daily_log_id=log1.id, name="Cement", quantity=10.0, unit="bags", unit_cost=250.0))
+            session.add(Material(daily_log_id=log2.id, name="Steel", quantity=5.0, unit="bars", unit_cost=500.0))
+    yield {"p1": p1, "p2": p2, "log1": log1, "log2": log2}
+    async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(Material).where(Material.daily_log_id.in_([log1.id, log2.id])))
+            await session.execute(delete(DailyLog).where(DailyLog.id.in_([log1.id, log2.id])))
+            await session.execute(delete(ProjectAssignment).where(ProjectAssignment.project_id.in_([p1.id, p2.id])))
+            await session.execute(delete(Project).where(Project.id.in_([p1.id, p2.id])))
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def seed_worker_dashboard(test_session_factory, seed_users):
     async with test_session_factory() as session:
         async with session.begin():
@@ -130,6 +171,15 @@ class TestOwnerDashboard:
         assert "total_workers_active" in data
         assert "total_material_cost" in data
 
+    async def test_owner_dashboard_includes_delta_fields(self, owner_client: AsyncClient, seed_owner_dashboard):
+        res = await owner_client.get("/api/v1/dashboard/owner")
+        assert res.status_code == 200
+        data = res.json()
+        assert "total_active_projects_delta" in data
+        assert "total_spending_delta_percent" in data
+        assert "total_workers_active_delta" in data
+        assert "incidents_this_week_delta" in data
+
     async def test_owner_dashboard_counts_active_projects(self, owner_client: AsyncClient, seed_owner_dashboard):
         res = await owner_client.get("/api/v1/dashboard/owner")
         assert res.status_code == 200
@@ -172,6 +222,16 @@ class TestManagerDashboard:
         assert "total_incidents" in data
         assert "open_incidents" in data
         assert "phases" in data
+
+    async def test_manager_dashboard_includes_delta_fields(self, owner_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await owner_client.get(f"/api/v1/dashboard/manager/{p.id}")
+        assert res.status_code == 200
+        data = res.json()
+        assert "logs_submitted_delta" in data
+        assert "attendance_rate_delta" in data
+        assert "total_spending_delta_percent" in data
+        assert "incidents_this_week_delta" in data
 
     async def test_assigned_manager_can_access_dashboard(self, manager_client: AsyncClient, seed_manager_dashboard):
         p = seed_manager_dashboard["project"]
@@ -264,4 +324,48 @@ class TestWorkerDashboard:
 
     async def test_unauthenticated_cannot_access_worker_dashboard(self, unauth_client: AsyncClient):
         res = await unauth_client.get("/api/v1/dashboard/worker")
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# GET /dashboard/manager/aggregate
+# ---------------------------------------------------------------------------
+class TestManagerAggregateDashboard:
+    async def test_manager_can_access_aggregate_dashboard(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
+        res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+        data = res.json()
+        assert "total_logs_submitted" in data
+        assert "total_budget" in data
+        assert "total_spending" in data
+        assert "average_attendance_rate" in data
+        assert "incidents_this_week" in data
+        assert "over_budget_projects" in data
+
+    async def test_aggregate_dashboard_includes_delta_fields(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
+        res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+        data = res.json()
+        assert "total_logs_submitted_delta" in data
+        assert "total_spending_delta_percent" in data
+        assert "average_attendance_rate_delta" in data
+        assert "incidents_this_week_delta" in data
+
+    async def test_aggregate_reflects_multiple_projects(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
+        res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+        data = res.json()
+        assert data["total_logs_submitted"] >= 2
+        assert data["total_budget"] >= 3_000_000
+
+    async def test_owner_can_access_aggregate_dashboard(self, owner_client: AsyncClient):
+        res = await owner_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+
+    async def test_worker_cannot_access_aggregate_dashboard(self, worker_client: AsyncClient):
+        res = await worker_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_access_aggregate_dashboard(self, unauth_client: AsyncClient):
+        res = await unauth_client.get("/api/v1/dashboard/manager/aggregate")
         assert res.status_code == 401
