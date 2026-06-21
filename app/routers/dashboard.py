@@ -5,16 +5,11 @@ from app.core.dependencies import get_current_user, require_owner, require_owner
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.dashboard import OwnerDashboard, ProjectManagerDashboard, WorkerDashboard
-from app.services.dashboard import (
-    get_manager_dashboard as _get_manager_dashboard,
-)
-from app.services.dashboard import (
-    get_owner_dashboard as _get_owner_dashboard,
-)
-from app.services.dashboard import (
-    get_worker_dashboard as _get_worker_dashboard,
-)
+from app.schemas.dashboard import OwnerDashboard, ProjectManagerAggregateDashboard, ProjectManagerDashboard, WorkerDashboard
+from app.services.dashboard import get_manager_aggregate_dashboard as _get_manager_aggregate_dashboard
+from app.services.dashboard import get_manager_dashboard as _get_manager_dashboard
+from app.services.dashboard import get_owner_dashboard as _get_owner_dashboard
+from app.services.dashboard import get_worker_dashboard as _get_worker_dashboard
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
@@ -27,6 +22,16 @@ async def get_owner_dashboard(
     db: AsyncSession = Depends(get_db),
 ):
     return await _get_owner_dashboard(db)
+
+
+@router.get("/manager/aggregate", response_model=ProjectManagerAggregateDashboard)
+@limiter.limit("30/minute")
+async def get_manager_aggregate_dashboard(
+    request: Request,
+    current_user: User = Depends(require_owner_or_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _get_manager_aggregate_dashboard(current_user, db)
 
 
 @router.get("/manager/{project_id}", response_model=ProjectManagerDashboard)

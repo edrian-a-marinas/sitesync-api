@@ -19,6 +19,11 @@ class OwnerDashboard(BaseModel):
     over_budget_projects: list[ProjectBudgetSummary]
     total_workers_active: int
     total_material_cost: float
+    incidents_this_week: int
+    total_active_projects_delta: int | None = None
+    total_spending_delta_percent: float | None = None
+    total_workers_active_delta: int | None = None
+    incidents_this_week_delta: int | None = None
 
 
 class PhaseBudgetSummary(BaseModel):
@@ -41,6 +46,23 @@ class ProjectManagerDashboard(BaseModel):
     total_incidents: int
     open_incidents: int
     phases: list[PhaseBudgetSummary]
+    logs_submitted_delta: int | None = None
+    attendance_rate_delta: float | None = None
+    total_spending_delta_percent: float | None = None
+    incidents_this_week_delta: int | None = None
+
+
+class ProjectManagerAggregateDashboard(BaseModel):
+    total_logs_submitted: int
+    total_budget: float
+    total_spending: float
+    average_attendance_rate: float
+    incidents_this_week: int
+    over_budget_projects: list[ProjectBudgetSummary]
+    total_logs_submitted_delta: int | None = None
+    total_spending_delta_percent: float | None = None
+    average_attendance_rate_delta: float | None = None
+    incidents_this_week_delta: int | None = None
 
 
 class CurrentShiftLog(BaseModel):

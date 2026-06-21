@@ -1,5 +1,5 @@
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,13 +15,130 @@ from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.dashboard import CurrentShiftLog, OwnerDashboard, PhaseBudgetSummary, ProjectBudgetSummary, ProjectManagerDashboard, WorkerDashboard
+from app.schemas.dashboard import (
+    CurrentShiftLog,
+    OwnerDashboard,
+    PhaseBudgetSummary,
+    ProjectBudgetSummary,
+    ProjectManagerAggregateDashboard,
+    ProjectManagerDashboard,
+    WorkerDashboard,
+)
 
 logger = logging.getLogger(__name__)
 
 
 OWNER_DASHBOARD_TTL = settings.OWNER_DASHBOARD_TTL
 MANAGER_DASHBOARD_TTL = settings.MANAGER_DASHBOARD_TTL
+
+
+async def _get_dashboard_deltas(
+    db: AsyncSession,
+    project_ids: list[int],
+) -> dict:
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())
+    start_of_last_week = start_of_week - timedelta(weeks=1)
+    end_of_last_week = start_of_week - timedelta(days=1)
+
+    # Incidents
+    incidents_this_week = (
+        await db.execute(
+            select(func.count(Incident.id))
+            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+            .where(DailyLog.project_id.in_(project_ids))
+            .where(DailyLog.log_date >= start_of_week)
+        )
+    ).scalar() or 0
+
+    incidents_last_week = (
+        await db.execute(
+            select(func.count(Incident.id))
+            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+            .where(DailyLog.project_id.in_(project_ids))
+            .where(DailyLog.log_date >= start_of_last_week)
+            .where(DailyLog.log_date <= end_of_last_week)
+        )
+    ).scalar() or 0
+
+    # Spending
+    spending_this_week = float(
+        (
+            await db.execute(
+                select(func.sum(Material.total_cost))
+                .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .where(DailyLog.log_date >= start_of_week)
+            )
+        ).scalar()
+        or 0.0
+    )
+
+    spending_last_week = float(
+        (
+            await db.execute(
+                select(func.sum(Material.total_cost))
+                .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .where(DailyLog.log_date >= start_of_last_week)
+                .where(DailyLog.log_date <= end_of_last_week)
+            )
+        ).scalar()
+        or 0.0
+    )
+
+    spending_delta_percent = round(((spending_this_week - spending_last_week) / spending_last_week) * 100, 1) if spending_last_week > 0 else None
+
+    # Logs submitted
+    logs_this_week = (
+        await db.execute(select(func.count(DailyLog.id)).where(DailyLog.project_id.in_(project_ids)).where(DailyLog.log_date >= start_of_week))
+    ).scalar() or 0
+
+    logs_last_week = (
+        await db.execute(
+            select(func.count(DailyLog.id))
+            .where(DailyLog.project_id.in_(project_ids))
+            .where(DailyLog.log_date >= start_of_last_week)
+            .where(DailyLog.log_date <= end_of_last_week)
+        )
+    ).scalar() or 0
+
+    # Attendance rate
+    avg_hours_this_week = float(
+        (
+            await db.execute(
+                select(func.avg(Attendance.hours_worked))
+                .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .where(DailyLog.log_date >= start_of_week)
+            )
+        ).scalar()
+        or 0.0
+    )
+
+    avg_hours_last_week = float(
+        (
+            await db.execute(
+                select(func.avg(Attendance.hours_worked))
+                .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .where(DailyLog.log_date >= start_of_last_week)
+                .where(DailyLog.log_date <= end_of_last_week)
+            )
+        ).scalar()
+        or 0.0
+    )
+
+    logger.debug(
+        f"DASHBOARD_DELTAS | project_ids={project_ids} | incidents_delta={incidents_this_week - incidents_last_week} | spending_delta_pct={spending_delta_percent} | logs_delta={logs_this_week - logs_last_week} | attendance_delta={round(avg_hours_this_week - avg_hours_last_week, 2)}"
+    )
+
+    return {
+        "incidents_this_week_delta": incidents_this_week - incidents_last_week,
+        "total_spending_delta_percent": spending_delta_percent,
+        "logs_submitted_delta": logs_this_week - logs_last_week,
+        "attendance_rate_delta": round(avg_hours_this_week - avg_hours_last_week, 2),
+    }
 
 
 async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
@@ -70,8 +187,35 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
 
     # Total material cost
     total_material_cost = (await db.execute(select(func.sum(Material.total_cost)))).scalar() or 0.0
+    # Incidents this week (active projects only)
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())
+    active_project_ids = [p.id for p in active_projects]
+    incidents_this_week = (
+        await db.execute(
+            select(func.count(Incident.id))
+            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+            .where(DailyLog.project_id.in_(active_project_ids))
+            .where(DailyLog.log_date >= start_of_week)
+        )
+    ).scalar() or 0
 
-    logger.info(f"OWNER_DASHBOARD | active_projects={len(active_projects)} | over_budget={len(over_budget)}")
+    # Active projects last month delta
+    end_of_last_month = today.replace(day=1) - timedelta(days=1)
+    active_projects_last_month = (
+        await db.execute(select(func.count(Project.id)).where(Project.status == "Active").where(Project.start_date <= end_of_last_month))
+    ).scalar() or 0
+
+    # Workers last week delta
+    total_workers_last_week = (
+        await db.execute(select(func.count(User.id)).join(User.role).where(Role.name == "site_worker").where(User.is_active))
+    ).scalar() or 0
+
+    deltas = await _get_dashboard_deltas(db=db, project_ids=active_project_ids)
+
+    logger.info(
+        f"OWNER_DASHBOARD | GET | role=owner | active_projects={len(active_projects)} | over_budget={len(over_budget)} | incidents_this_week={incidents_this_week}"
+    )
     result = OwnerDashboard(
         total_active_projects=len(active_projects),
         total_budget=sum(float(p.total_budget) for p in active_projects),
@@ -79,6 +223,10 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
         over_budget_projects=over_budget,
         total_workers_active=total_workers,
         total_material_cost=float(total_material_cost),
+        incidents_this_week=incidents_this_week,
+        total_active_projects_delta=len(active_projects) - active_projects_last_month,
+        total_workers_active_delta=total_workers - total_workers_last_week,
+        **deltas,
     )
     await set_cache(cache_key, result.model_dump(), OWNER_DASHBOARD_TTL)
     return result
@@ -155,7 +303,9 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
             )
         )
 
-    logger.info(f"MANAGER_DASHBOARD | project_id={project_id} | user_id={current_user.id}")
+    deltas = await _get_dashboard_deltas(db=db, project_ids=[project_id])
+
+    logger.info(f"MANAGER_DASHBOARD | GET | role=project_manager | user_id={current_user.id} | project_id={project_id}")
     result = ProjectManagerDashboard(
         project_id=project.id,
         project_name=project.name,
@@ -165,8 +315,102 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
         total_incidents=len(incidents),
         open_incidents=len(open_incidents),
         phases=phase_summaries,
+        **deltas,
     )
     cache_key = f"dashboard:manager:{project_id}"
+    await set_cache(cache_key, result.model_dump(), MANAGER_DASHBOARD_TTL)
+    return result
+
+
+async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) -> ProjectManagerAggregateDashboard:
+    cache_key = f"dashboard:manager:aggregate:{current_user.id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        return ProjectManagerAggregateDashboard.model_validate(cached)
+
+    # Get all assigned project IDs for this PM
+    assignments = (await db.execute(select(ProjectAssignment).where(ProjectAssignment.user_id == current_user.id))).scalars().all()
+    project_ids = [a.project_id for a in assignments]
+
+    if not project_ids:
+        return ProjectManagerAggregateDashboard(
+            total_logs_submitted=0,
+            total_budget=0.0,
+            total_spending=0.0,
+            average_attendance_rate=0.0,
+            incidents_this_week=0,
+            over_budget_projects=[],
+        )
+
+    # Total logs submitted across all assigned projects
+    total_logs = (await db.execute(select(func.count(DailyLog.id)).where(DailyLog.project_id.in_(project_ids)))).scalar() or 0
+
+    # Budget and spending per project
+    projects = (await db.execute(select(Project).where(Project.id.in_(project_ids)))).scalars().all()
+
+    total_budget = sum(float(p.total_budget) for p in projects)
+
+    project_summaries = []
+    total_spending = 0.0
+    for project in projects:
+        actual = float(
+            (
+                await db.execute(
+                    select(func.sum(Material.total_cost))
+                    .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                    .where(DailyLog.project_id == project.id)
+                )
+            ).scalar()
+            or 0.0
+        )
+        total_spending += actual
+        is_over = actual > float(project.total_budget)
+        project_summaries.append(
+            ProjectBudgetSummary(
+                project_id=project.id,
+                project_name=project.name,
+                total_budget=float(project.total_budget),
+                actual_spending=actual,
+                is_over_budget=is_over,
+            )
+        )
+    over_budget = [p for p in project_summaries if p.is_over_budget]
+
+    # Average attendance rate across all assigned projects
+    avg_hours = (
+        await db.execute(
+            select(func.avg(Attendance.hours_worked))
+            .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+            .where(DailyLog.project_id.in_(project_ids))
+        )
+    ).scalar() or 0.0
+
+    # Incidents this week
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())
+    incidents_this_week = (
+        await db.execute(
+            select(func.count(Incident.id))
+            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+            .where(DailyLog.project_id.in_(project_ids))
+            .where(DailyLog.log_date >= start_of_week)
+        )
+    ).scalar() or 0
+
+    deltas = await _get_dashboard_deltas(db=db, project_ids=project_ids)
+
+    logger.info(f"MANAGER_AGGREGATE_DASHBOARD | GET | role=project_manager | user_id={current_user.id} | assigned_projects={len(project_ids)}")
+
+    result = ProjectManagerAggregateDashboard(
+        total_logs_submitted=total_logs,
+        total_budget=total_budget,
+        total_spending=total_spending,
+        average_attendance_rate=round(float(avg_hours), 2),
+        incidents_this_week=incidents_this_week,
+        over_budget_projects=over_budget,
+        **deltas,
+    )
+
     await set_cache(cache_key, result.model_dump(), MANAGER_DASHBOARD_TTL)
     return result
 
