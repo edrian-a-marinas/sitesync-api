@@ -46,10 +46,11 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 @limiter.limit("30/minute")
 async def get_projects(
     request: Request,
+    status: str | None = None,
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_projects(current_user, db)
+    return await _get_projects(current_user, db, status)
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

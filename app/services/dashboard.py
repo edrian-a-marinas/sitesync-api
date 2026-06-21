@@ -273,14 +273,23 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
         )
     ).scalar() or 0.0
 
-    # Incidents
+    # Incidents — total is all-time (for aggregation), this-week is date-scoped (for the KPI card)
+    today = date.today()
+    start_of_week = today - timedelta(days=today.weekday())
     incidents = (
         (await db.execute(select(Incident).join(DailyLog, DailyLog.id == Incident.daily_log_id).where(DailyLog.project_id == project_id)))
         .scalars()
         .all()
     )
-
     open_incidents = [i for i in incidents if i.status == "Open"]
+    incidents_this_week = (
+        await db.execute(
+            select(func.count(Incident.id))
+            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+            .where(DailyLog.project_id == project_id)
+            .where(DailyLog.log_date >= start_of_week)
+        )
+    ).scalar() or 0
 
     # Phases
     phases = (await db.execute(select(ProjectPhase).where(ProjectPhase.project_id == project_id))).scalars().all()
@@ -313,6 +322,7 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
         attendance_rate=round(float(avg_hours), 2),
         total_material_cost=float(material_cost),
         total_incidents=len(incidents),
+        incidents_this_week=incidents_this_week,
         open_incidents=len(open_incidents),
         phases=phase_summaries,
         **deltas,
@@ -398,9 +408,7 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
     ).scalar() or 0
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=project_ids)
-
     logger.info(f"MANAGER_AGGREGATE_DASHBOARD | GET | role=project_manager | user_id={current_user.id} | assigned_projects={len(project_ids)}")
-
     result = ProjectManagerAggregateDashboard(
         total_logs_submitted=total_logs,
         total_budget=total_budget,
@@ -408,9 +416,11 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
         average_attendance_rate=round(float(avg_hours), 2),
         incidents_this_week=incidents_this_week,
         over_budget_projects=over_budget,
-        **deltas,
+        total_logs_submitted_delta=deltas["logs_submitted_delta"],
+        average_attendance_rate_delta=deltas["attendance_rate_delta"],
+        total_spending_delta_percent=deltas["total_spending_delta_percent"],
+        incidents_this_week_delta=deltas["incidents_this_week_delta"],
     )
-
     await set_cache(cache_key, result.model_dump(), MANAGER_DASHBOARD_TTL)
     return result
 

@@ -44,6 +44,7 @@ class ProjectManagerDashboard(BaseModel):
     attendance_rate: float
     total_material_cost: float
     total_incidents: int
+    incidents_this_week: int
     open_incidents: int
     phases: list[PhaseBudgetSummary]
     logs_submitted_delta: int | None = None

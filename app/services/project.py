@@ -13,13 +13,7 @@ from app.models.project import (
 )
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.project import (
-    AssignUserRequest,
-    PhaseCreate,
-    PhaseUpdate,
-    ProjectCreate,
-    ProjectUpdate,
-)
+from app.schemas.project import AssignUserRequest, PhaseCreate, PhaseUpdate, ProjectCreate, ProjectResponse, ProjectUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -27,24 +21,22 @@ logger = logging.getLogger(__name__)
 PROJECTS_TTL = settings.PROJECTS_TTL
 
 
-async def get_projects(current_user: User, db: AsyncSession) -> list[Project]:
-    cache_key = f"projects:user:{current_user.id}"
+async def get_projects(current_user: User, db: AsyncSession, status: str | None = None) -> list[Project]:
+    cache_key = f"projects:user:{current_user.id}:{status or 'all'}"
     cached = await get_cache(cache_key)
     if cached:
         return [Project(**p) for p in cached]
-
     current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     if current_role and current_role.name == "owner":
-        result = await db.execute(select(Project))
-        projects = result.scalars().all()
+        query = select(Project)
     else:
-        # PM — only assigned projects
-        result = await db.execute(
+        query = (
             select(Project).join(ProjectAssignment, ProjectAssignment.project_id == Project.id).where(ProjectAssignment.user_id == current_user.id)
         )
-        projects = result.scalars().all()
-
-    from app.schemas.project import ProjectResponse
+    if status:
+        query = query.where(Project.status == status)
+    result = await db.execute(query)
+    projects = result.scalars().all()
 
     await set_cache(cache_key, [ProjectResponse.model_validate(p).model_dump(mode="json") for p in projects], PROJECTS_TTL)
     return projects
