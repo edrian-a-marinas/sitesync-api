@@ -17,6 +17,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.schemas.dashboard import (
     CurrentShiftLog,
+    MaterialWeeklyTrend,
     OwnerDashboard,
     PhaseBudgetSummary,
     ProjectBudgetSummary,
@@ -141,6 +142,39 @@ async def _get_dashboard_deltas(
     }
 
 
+async def _get_material_trends(db: AsyncSession, project_ids: list[int], weeks: int = 8) -> list[MaterialWeeklyTrend]:
+    if not project_ids:
+        return []
+    today = date.today()
+    current_week_start = today - timedelta(days=today.weekday())
+    cutoff_date = current_week_start - timedelta(weeks=weeks - 1)
+    week_start = func.date_trunc("week", DailyLog.log_date).label("week_start")
+    rows = (
+        await db.execute(
+            select(
+                week_start,
+                Material.name,
+                func.sum(Material.quantity).label("total_quantity"),
+            )
+            .join(DailyLog, DailyLog.id == Material.daily_log_id)
+            .where(DailyLog.project_id.in_(project_ids))
+            .where(DailyLog.log_date >= cutoff_date)
+            .where(DailyLog.log_date <= today)
+            .group_by(week_start, Material.name)
+            .order_by(week_start)
+        )
+    ).all()
+    logger.debug(f"MATERIAL_TRENDS | project_ids={project_ids} | weeks={weeks} | rows={len(rows)}")
+    return [
+        MaterialWeeklyTrend(
+            week=week_start.strftime("%Y-%m-%d"),
+            material_name=name,
+            total_quantity=float(qty),
+        )
+        for week_start, name, qty in rows
+    ]
+
+
 async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
     cache_key = "dashboard:owner"
     cached = await get_cache(cache_key)
@@ -212,7 +246,7 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
     ).scalar() or 0
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=active_project_ids)
-
+    material_trends = await _get_material_trends(db=db, project_ids=active_project_ids)
     logger.info(
         f"OWNER_DASHBOARD | GET | role=owner | active_projects={len(active_projects)} | over_budget={len(over_budget)} | incidents_this_week={incidents_this_week}"
     )
@@ -221,6 +255,8 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
         total_budget=sum(float(p.total_budget) for p in active_projects),
         total_spending=total_spending,
         over_budget_projects=over_budget,
+        all_projects_budget=project_summaries,
+        material_trends=material_trends,
         total_workers_active=total_workers,
         total_material_cost=float(total_material_cost),
         incidents_this_week=incidents_this_week,
@@ -338,9 +374,21 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
     if cached:
         return ProjectManagerAggregateDashboard.model_validate(cached)
 
-    # Get all assigned project IDs for this PM
-    assignments = (await db.execute(select(ProjectAssignment).where(ProjectAssignment.user_id == current_user.id))).scalars().all()
-    project_ids = [a.project_id for a in assignments]
+    # Aggregate KPIs are scoped to active projects only (mirrors get_owner_dashboard)
+    assignments = (
+        (
+            await db.execute(
+                select(ProjectAssignment)
+                .join(Project, Project.id == ProjectAssignment.project_id)
+                .where(ProjectAssignment.user_id == current_user.id)
+                .where(Project.status == "Active")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    active_project_ids = [a.project_id for a in assignments]
+    project_ids = active_project_ids  # kept for compatibility with downstream queries in this function
 
     if not project_ids:
         return ProjectManagerAggregateDashboard(
@@ -350,6 +398,8 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
             average_attendance_rate=0.0,
             incidents_this_week=0,
             over_budget_projects=[],
+            all_projects_budget=[],
+            material_trends=[],
         )
 
     # Total logs submitted across all assigned projects
@@ -408,6 +458,7 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
     ).scalar() or 0
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=project_ids)
+    material_trends = await _get_material_trends(db=db, project_ids=project_ids)
     logger.info(f"MANAGER_AGGREGATE_DASHBOARD | GET | role=project_manager | user_id={current_user.id} | assigned_projects={len(project_ids)}")
     result = ProjectManagerAggregateDashboard(
         total_logs_submitted=total_logs,
@@ -416,6 +467,8 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
         average_attendance_rate=round(float(avg_hours), 2),
         incidents_this_week=incidents_this_week,
         over_budget_projects=over_budget,
+        all_projects_budget=project_summaries,
+        material_trends=material_trends,
         total_logs_submitted_delta=deltas["logs_submitted_delta"],
         average_attendance_rate_delta=deltas["attendance_rate_delta"],
         total_spending_delta_percent=deltas["total_spending_delta_percent"],

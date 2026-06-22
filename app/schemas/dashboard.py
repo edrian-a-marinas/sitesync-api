@@ -12,11 +12,19 @@ class ProjectBudgetSummary(BaseModel):
         from_attributes = True
 
 
+class MaterialWeeklyTrend(BaseModel):
+    week: str
+    material_name: str
+    total_quantity: float
+
+
 class OwnerDashboard(BaseModel):
     total_active_projects: int
     total_budget: float
     total_spending: float
     over_budget_projects: list[ProjectBudgetSummary]
+    all_projects_budget: list[ProjectBudgetSummary]
+    material_trends: list[MaterialWeeklyTrend]
     total_workers_active: int
     total_material_cost: float
     incidents_this_week: int
@@ -60,6 +68,8 @@ class ProjectManagerAggregateDashboard(BaseModel):
     average_attendance_rate: float
     incidents_this_week: int
     over_budget_projects: list[ProjectBudgetSummary]
+    all_projects_budget: list[ProjectBudgetSummary]
+    material_trends: list[MaterialWeeklyTrend]
     total_logs_submitted_delta: int | None = None
     total_spending_delta_percent: float | None = None
     average_attendance_rate_delta: float | None = None
