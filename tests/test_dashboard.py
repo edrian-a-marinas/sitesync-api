@@ -168,6 +168,8 @@ class TestOwnerDashboard:
         assert "total_budget" in data
         assert "total_spending" in data
         assert "over_budget_projects" in data
+        assert "all_projects_budget" in data
+        assert "material_trends" in data
         assert "total_workers_active" in data
         assert "total_material_cost" in data
 
@@ -189,6 +191,30 @@ class TestOwnerDashboard:
         res = await owner_client.get("/api/v1/dashboard/owner")
         assert res.status_code == 200
         assert res.json()["total_material_cost"] >= 2500.0
+
+    async def test_owner_dashboard_includes_all_projects_budget(self, owner_client: AsyncClient, seed_owner_dashboard):
+        res = await owner_client.get("/api/v1/dashboard/owner")
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data["all_projects_budget"], list)
+        assert len(data["all_projects_budget"]) >= 2
+        for proj in data["all_projects_budget"]:
+            assert "project_id" in proj
+            assert "project_name" in proj
+            assert "total_budget" in proj
+            assert "actual_spending" in proj
+            assert "is_over_budget" in proj
+
+    async def test_owner_dashboard_includes_material_trends(self, owner_client: AsyncClient, seed_owner_dashboard):
+        res = await owner_client.get("/api/v1/dashboard/owner")
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data["material_trends"], list)
+        if data["material_trends"]:
+            for trend in data["material_trends"]:
+                assert "week" in trend
+                assert "material_name" in trend
+                assert "total_quantity" in trend
 
     async def test_manager_cannot_access_owner_dashboard(self, manager_client: AsyncClient):
         res = await manager_client.get("/api/v1/dashboard/owner")
@@ -341,6 +367,8 @@ class TestManagerAggregateDashboard:
         assert "average_attendance_rate" in data
         assert "incidents_this_week" in data
         assert "over_budget_projects" in data
+        assert "all_projects_budget" in data
+        assert "material_trends" in data
 
     async def test_aggregate_dashboard_includes_delta_fields(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
         res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
@@ -357,6 +385,30 @@ class TestManagerAggregateDashboard:
         data = res.json()
         assert data["total_logs_submitted"] >= 2
         assert data["total_budget"] >= 3_000_000
+
+    async def test_aggregate_dashboard_includes_all_projects_budget(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
+        res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data["all_projects_budget"], list)
+        assert len(data["all_projects_budget"]) >= 2
+        for proj in data["all_projects_budget"]:
+            assert "project_id" in proj
+            assert "project_name" in proj
+            assert "total_budget" in proj
+            assert "actual_spending" in proj
+            assert "is_over_budget" in proj
+
+    async def test_aggregate_dashboard_includes_material_trends(self, manager_client: AsyncClient, seed_manager_aggregate_dashboard):
+        res = await manager_client.get("/api/v1/dashboard/manager/aggregate")
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data["material_trends"], list)
+        if data["material_trends"]:
+            for trend in data["material_trends"]:
+                assert "week" in trend
+                assert "material_name" in trend
+                assert "total_quantity" in trend
 
     async def test_owner_can_access_aggregate_dashboard(self, owner_client: AsyncClient):
         res = await owner_client.get("/api/v1/dashboard/manager/aggregate")
