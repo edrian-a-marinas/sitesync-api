@@ -39,7 +39,7 @@ async def seed_owner_dashboard(test_session_factory, seed_users):
             )
             session.add_all([p1, p2])
             await session.flush()
-            log = DailyLog(project_id=p1.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 1, 1), work_accomplished="Test work")
+            log = DailyLog(project_id=p1.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 6, 16), work_accomplished="Test work")
             session.add(log)
             await session.flush()
             session.add(Material(daily_log_id=log.id, name="Cement", quantity=10.0, unit="bags", unit_cost=250.0))
@@ -109,8 +109,8 @@ async def seed_manager_aggregate_dashboard(test_session_factory, seed_users):
             await session.flush()
             a1 = ProjectAssignment(project_id=p1.id, user_id=seed_users["manager"].id)
             a2 = ProjectAssignment(project_id=p2.id, user_id=seed_users["manager"].id)
-            log1 = DailyLog(project_id=p1.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 1, 1), work_accomplished="Work A")
-            log2 = DailyLog(project_id=p2.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 1, 2), work_accomplished="Work B")
+            log1 = DailyLog(project_id=p1.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 6, 16), work_accomplished="Work A")
+            log2 = DailyLog(project_id=p2.id, submitted_by=seed_users["manager"].id, log_date=date(2026, 6, 17), work_accomplished="Work B")
             session.add_all([a1, a2, log1, log2])
             await session.flush()
             session.add(Material(daily_log_id=log1.id, name="Cement", quantity=10.0, unit="bags", unit_cost=250.0))
@@ -214,7 +214,7 @@ class TestOwnerDashboard:
             for trend in data["material_trends"]:
                 assert "week" in trend
                 assert "material_name" in trend
-                assert "total_quantity" in trend
+                assert "total_cost" in trend
 
     async def test_manager_cannot_access_owner_dashboard(self, manager_client: AsyncClient):
         res = await manager_client.get("/api/v1/dashboard/owner")
@@ -304,6 +304,13 @@ class TestManagerDashboard:
         assert res.status_code == 200
         phases = res.json()["phases"]
         assert any(ph["phase_name"] == "Foundation" for ph in phases)
+
+    async def test_manager_dashboard_includes_material_trends(self, owner_client: AsyncClient, seed_manager_dashboard):
+        p = seed_manager_dashboard["project"]
+        res = await owner_client.get(f"/api/v1/dashboard/manager/{p.id}")
+        assert res.status_code == 200
+        data = res.json()
+        assert isinstance(data["material_trends"], list)
 
     async def test_worker_cannot_access_manager_dashboard(self, worker_client: AsyncClient, seed_manager_dashboard):
         p = seed_manager_dashboard["project"]
@@ -408,7 +415,7 @@ class TestManagerAggregateDashboard:
             for trend in data["material_trends"]:
                 assert "week" in trend
                 assert "material_name" in trend
-                assert "total_quantity" in trend
+                assert "total_cost" in trend
 
     async def test_owner_can_access_aggregate_dashboard(self, owner_client: AsyncClient):
         res = await owner_client.get("/api/v1/dashboard/manager/aggregate")
