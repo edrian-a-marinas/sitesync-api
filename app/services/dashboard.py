@@ -169,7 +169,7 @@ async def _get_material_trends(db: AsyncSession, project_ids: list[int], weeks: 
         MaterialWeeklyTrend(
             week=week_start.strftime("%Y-%m-%d"),
             material_name=name,
-            total_quantity=float(cost),
+            total_cost=float(cost),
         )
         for week_start, name, cost in rows
     ]
