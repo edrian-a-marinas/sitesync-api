@@ -142,36 +142,62 @@ async def _get_dashboard_deltas(
     }
 
 
-async def _get_material_trends(db: AsyncSession, project_ids: list[int], weeks: int = 8) -> list[MaterialWeeklyTrend]:
+async def _get_material_trends(db: AsyncSession, project_ids: list[int], limit_weeks: int | None = 8) -> list[MaterialWeeklyTrend]:
     if not project_ids:
         return []
-    today = date.today()
-    current_week_start = today - timedelta(days=today.weekday())
-    cutoff_date = current_week_start - timedelta(weeks=weeks - 1)
-    week_start = func.date_trunc("week", DailyLog.log_date).label("week_start")
+
+    if limit_weeks is not None:
+        # Aggregate mode: group by week, scoped to last N weeks
+        today = date.today()
+        current_week_start = today - timedelta(days=today.weekday())
+        cutoff_date = current_week_start - timedelta(weeks=limit_weeks - 1)
+        week_start = func.date_trunc("week", DailyLog.log_date).label("week_start")
+        rows = (
+            await db.execute(
+                select(
+                    week_start,
+                    Material.name,
+                    func.sum(Material.total_cost).label("total_cost"),
+                )
+                .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .where(DailyLog.log_date >= cutoff_date)
+                .where(DailyLog.log_date <= today)
+                .group_by(week_start, Material.name)
+                .order_by(week_start)
+            )
+        ).all()
+        logger.debug(f"MATERIAL_TRENDS | project_ids={project_ids} | limit_weeks={limit_weeks} | rows={len(rows)}")
+        return [
+            MaterialWeeklyTrend(
+                week=week_start.strftime("%Y-%m-%d"),
+                material_name=name,
+                total_cost=float(cost),
+            )
+            for week_start, name, cost in rows
+        ]
+
+    # All-time mode: one aggregated total per material, no time grouping
     rows = (
         await db.execute(
             select(
-                week_start,
                 Material.name,
                 func.sum(Material.total_cost).label("total_cost"),
             )
             .join(DailyLog, DailyLog.id == Material.daily_log_id)
             .where(DailyLog.project_id.in_(project_ids))
-            .where(DailyLog.log_date >= cutoff_date)
-            .where(DailyLog.log_date <= today)
-            .group_by(week_start, Material.name)
-            .order_by(week_start)
+            .group_by(Material.name)
+            .order_by(func.sum(Material.total_cost).desc())
         )
     ).all()
-    logger.debug(f"MATERIAL_TRENDS | project_ids={project_ids} | weeks={weeks} | rows={len(rows)}")
+    logger.debug(f"MATERIAL_TRENDS | project_ids={project_ids} | limit_weeks=None (all-time) | rows={len(rows)}")
     return [
         MaterialWeeklyTrend(
-            week=week_start.strftime("%Y-%m-%d"),
+            week=None,
             material_name=name,
             total_cost=float(cost),
         )
-        for week_start, name, cost in rows
+        for name, cost in rows
     ]
 
 
@@ -349,7 +375,7 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
         )
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=[project_id])
-
+    material_trends = await _get_material_trends(db=db, project_ids=[project_id], limit_weeks=None)
     logger.info(f"MANAGER_DASHBOARD | GET | role=project_manager | user_id={current_user.id} | project_id={project_id}")
     result = ProjectManagerDashboard(
         project_id=project.id,
@@ -361,6 +387,7 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
         incidents_this_week=incidents_this_week,
         open_incidents=len(open_incidents),
         phases=phase_summaries,
+        material_trends=material_trends,
         **deltas,
     )
     cache_key = f"dashboard:manager:{project_id}"

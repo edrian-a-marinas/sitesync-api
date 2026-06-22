@@ -13,7 +13,7 @@ class ProjectBudgetSummary(BaseModel):
 
 
 class MaterialWeeklyTrend(BaseModel):
-    week: str
+    week: str | None = None
     material_name: str
     total_cost: float
 
@@ -55,6 +55,7 @@ class ProjectManagerDashboard(BaseModel):
     incidents_this_week: int
     open_incidents: int
     phases: list[PhaseBudgetSummary]
+    material_trends: list[MaterialWeeklyTrend]
     logs_submitted_delta: int | None = None
     attendance_rate_delta: float | None = None
     total_spending_delta_percent: float | None = None
