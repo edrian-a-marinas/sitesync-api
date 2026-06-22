@@ -65,29 +65,32 @@ jobs:
           ALGORITHM: HS256
           ACCESS_TOKEN_EXPIRE_MINUTES: "30"
         run: pytest --tb=short -q
-  deploy:
+  
+  # commented out for now. aws backend server stopped for a while, while frontend development
+  #deploy: 
     # needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Deploy to EC2 Instance 1
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd ~/sitesync-api
-            git pull origin main
-            docker compose up -d --build
+    #runs-on: ubuntu-latest
+    #if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    #steps:
+    #  - name: Deploy to EC2 Instance 1
+    #    uses: appleboy/ssh-action@v1.0.3
+    #    with:
+    #      host: ${{ secrets.EC2_HOST }}
+    #      username: ${{ secrets.EC2_USER }}
+    #      key: ${{ secrets.EC2_SSH_KEY }}
+    #      script: |
+    #        cd ~/sitesync-api
+    #        git pull origin main
+    #        docker compose up -d --build
 
-      - name: Deploy to EC2 Instance 2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USER_2 }}
-          key: ${{ secrets.EC2_SSH_KEY_2 }}
-          script: |
-            cd ~/sitesync-api
-            git pull origin main
-            docker compose up -d --build
+      # commented out because AWS ALB / Load balancers deletion (costing too much)
+      #- name: Deploy to EC2 Instance 2
+       # uses: appleboy/ssh-action@v1.0.3
+        #with:
+         # host: ${{ secrets.EC2_HOST_2 }}
+          #username: ${{ secrets.EC2_USER_2 }}
+          #key: ${{ secrets.EC2_SSH_KEY_2 }}
+          #script: |
+          #cd ~/sitesync-api
+           # git pull origin main
+           # docker compose up -d --build
