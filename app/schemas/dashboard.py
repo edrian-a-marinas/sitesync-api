@@ -15,7 +15,7 @@ class ProjectBudgetSummary(BaseModel):
 class MaterialWeeklyTrend(BaseModel):
     week: str
     material_name: str
-    total_quantity: float
+    total_cost: float
 
 
 class OwnerDashboard(BaseModel):
