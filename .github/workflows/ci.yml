@@ -81,13 +81,14 @@ jobs:
             git pull origin main
             docker compose up -d --build
 
-      - name: Deploy to EC2 Instance 2
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST_2 }}
-          username: ${{ secrets.EC2_USER_2 }}
-          key: ${{ secrets.EC2_SSH_KEY_2 }}
-          script: |
-            cd ~/sitesync-api
-            git pull origin main
-            docker compose up -d --build
+      # commented out because AWS ALB / Load balancers deletion (costing too much)
+      #- name: Deploy to EC2 Instance 2
+       # uses: appleboy/ssh-action@v1.0.3
+        #with:
+         # host: ${{ secrets.EC2_HOST_2 }}
+          #username: ${{ secrets.EC2_USER_2 }}
+          #key: ${{ secrets.EC2_SSH_KEY_2 }}
+          #script: |
+          #cd ~/sitesync-api
+           # git pull origin main
+           # docker compose up -d --build
