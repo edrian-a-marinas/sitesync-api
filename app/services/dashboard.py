@@ -154,7 +154,7 @@ async def _get_material_trends(db: AsyncSession, project_ids: list[int], weeks: 
             select(
                 week_start,
                 Material.name,
-                func.sum(Material.quantity).label("total_quantity"),
+                func.sum(Material.total_cost).label("total_cost"),
             )
             .join(DailyLog, DailyLog.id == Material.daily_log_id)
             .where(DailyLog.project_id.in_(project_ids))
@@ -169,9 +169,9 @@ async def _get_material_trends(db: AsyncSession, project_ids: list[int], weeks: 
         MaterialWeeklyTrend(
             week=week_start.strftime("%Y-%m-%d"),
             material_name=name,
-            total_quantity=float(qty),
+            total_quantity=float(cost),
         )
-        for week_start, name, qty in rows
+        for week_start, name, cost in rows
     ]
 
 
