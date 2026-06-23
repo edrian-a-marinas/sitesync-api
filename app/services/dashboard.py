@@ -237,12 +237,26 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
         return OwnerDashboard.model_validate(cached)
     # Total active projects
     active_projects = (await db.execute(select(Project).where(Project.status == "Active"))).scalars().all()
-
+    active_project_ids = [p.id for p in active_projects]
+    if year:
+        active_project_ids_this_year = (
+            (
+                await db.execute(
+                    select(func.distinct(DailyLog.project_id))
+                    .where(DailyLog.project_id.in_(active_project_ids))
+                    .where(func.extract("year", DailyLog.log_date) == year)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    else:
+        active_project_ids_this_year = active_project_ids
     # Budget vs actual spending per project
+    projects_to_summarize = [p for p in active_projects if p.id in active_project_ids_this_year] if year else active_projects
     project_summaries = []
     total_spending = 0.0
-
-    for project in active_projects:
+    for project in projects_to_summarize:
         actual_q = select(func.sum(Material.total_cost)).join(DailyLog, DailyLog.id == Material.daily_log_id).where(DailyLog.project_id == project.id)
         if year:
             actual_q = actual_q.where(func.extract("year", DailyLog.log_date) == year)
@@ -272,25 +286,44 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
 
     over_budget = [p for p in project_summaries if p.is_over_budget]
 
-    # Total active workers
-    total_workers = (
-        await db.execute(select(func.count(User.id)).join(User.role).where(Role.name == "site_worker").where(User.is_active))
-    ).scalar() or 0
+    # Total active workers (year-aware)
+    if year:
+        total_workers = (
+            await db.execute(
+                select(func.count(func.distinct(Attendance.worker_id)))
+                .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+                .where(DailyLog.project_id.in_(active_project_ids))
+                .where(func.extract("year", DailyLog.log_date) == year)
+            )
+        ).scalar() or 0
+    else:
+        total_workers = (
+            await db.execute(select(func.count(User.id)).join(User.role).where(Role.name == "site_worker").where(User.is_active))
+        ).scalar() or 0
 
     # Total material cost
     total_material_cost = (await db.execute(select(func.sum(Material.total_cost)))).scalar() or 0.0
     # Incidents this week (active projects only)
     today = date.today()
     start_of_week = today - timedelta(days=today.weekday())
-    active_project_ids = [p.id for p in active_projects]
-    incidents_this_week = (
-        await db.execute(
-            select(func.count(Incident.id))
-            .join(DailyLog, DailyLog.id == Incident.daily_log_id)
-            .where(DailyLog.project_id.in_(active_project_ids))
-            .where(DailyLog.log_date >= start_of_week)
-        )
-    ).scalar() or 0
+    if year:
+        incidents_this_week = (
+            await db.execute(
+                select(func.count(Incident.id))
+                .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+                .where(DailyLog.project_id.in_(active_project_ids))
+                .where(func.extract("year", DailyLog.log_date) == year)
+            )
+        ).scalar() or 0
+    else:
+        incidents_this_week = (
+            await db.execute(
+                select(func.count(Incident.id))
+                .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+                .where(DailyLog.project_id.in_(active_project_ids))
+                .where(DailyLog.log_date >= start_of_week)
+            )
+        ).scalar() or 0
 
     # Active projects last month delta
     end_of_last_month = today.replace(day=1) - timedelta(days=1)
@@ -305,11 +338,14 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=active_project_ids)
     material_trends = await _get_material_trends(db=db, project_ids=active_project_ids, all_time_weekly=True)
+    incidents_label = f"incidents_year_{year}" if year else "incidents_this_week"
     logger.info(
-        f"OWNER_DASHBOARD | GET | role=owner | active_projects={len(active_projects)} | over_budget={len(over_budget)} | incidents_this_week={incidents_this_week}"
+        f"OWNER_DASHBOARD | GET | role=owner | active_projects={len(active_projects)} | over_budget={len(over_budget)} | {incidents_label}={incidents_this_week}"
     )
+    total_active_projects = len(active_project_ids_this_year)
+
     result = OwnerDashboard(
-        total_active_projects=len(active_projects),
+        total_active_projects=total_active_projects,
         total_budget=sum(float(p.total_budget) for p in active_projects),
         total_spending=total_spending,
         over_budget_projects=over_budget,
@@ -466,9 +502,7 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
 
     # Budget and spending per project
     projects = (await db.execute(select(Project).where(Project.id.in_(project_ids)))).scalars().all()
-
     total_budget = sum(float(p.total_budget) for p in projects)
-
     project_summaries = []
     total_spending = 0.0
     for project in projects:
