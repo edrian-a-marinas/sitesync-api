@@ -7,6 +7,8 @@ class ProjectBudgetSummary(BaseModel):
     total_budget: float
     actual_spending: float
     is_over_budget: bool
+    total_incidents: int = 0
+    total_workers: int = 0
 
     class Config:
         from_attributes = True
@@ -16,6 +18,7 @@ class MaterialWeeklyTrend(BaseModel):
     week: str | None = None
     material_name: str
     total_cost: float
+    project_id: int | None = None
 
 
 class OwnerDashboard(BaseModel):

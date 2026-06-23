@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, require_owner, require_owner_or_manager
@@ -18,10 +18,11 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 @limiter.limit("30/minute")
 async def get_owner_dashboard(
     request: Request,
+    year: int | None = Query(None),
     current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_owner_dashboard(db)
+    return await _get_owner_dashboard(db, year=year)
 
 
 @router.get("/manager/aggregate", response_model=ProjectManagerAggregateDashboard)
