@@ -31,6 +31,7 @@ class OwnerDashboard(BaseModel):
     total_workers_active: int
     total_material_cost: float
     incidents_this_week: int
+    total_incidents: int
     total_active_projects_delta: int | None = None
     total_spending_delta_percent: float | None = None
     total_workers_active_delta: int | None = None
