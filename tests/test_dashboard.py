@@ -216,6 +216,18 @@ class TestOwnerDashboard:
                 assert "material_name" in trend
                 assert "total_cost" in trend
 
+    async def test_owner_dashboard_year_filter_scopes_projects(self, owner_client: AsyncClient, seed_owner_dashboard):
+        res = await owner_client.get("/api/v1/dashboard/owner?year=2026")
+        assert res.status_code == 200
+        data = res.json()
+        assert "total_active_projects" in data
+        assert "total_workers_active" in data
+        assert "incidents_this_week" in data
+        assert isinstance(data["all_projects_budget"], list)
+        for proj in data["all_projects_budget"]:
+            assert "project_id" in proj
+            assert "actual_spending" in proj
+
     async def test_manager_cannot_access_owner_dashboard(self, manager_client: AsyncClient):
         res = await manager_client.get("/api/v1/dashboard/owner")
         assert res.status_code == 403
