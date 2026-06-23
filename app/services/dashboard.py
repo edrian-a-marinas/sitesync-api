@@ -142,9 +142,38 @@ async def _get_dashboard_deltas(
     }
 
 
-async def _get_material_trends(db: AsyncSession, project_ids: list[int], limit_weeks: int | None = 8) -> list[MaterialWeeklyTrend]:
+async def _get_material_trends(
+    db: AsyncSession, project_ids: list[int], limit_weeks: int | None = 8, all_time_weekly: bool = False
+) -> list[MaterialWeeklyTrend]:
     if not project_ids:
         return []
+
+    if all_time_weekly:
+        week_start = func.date_trunc("week", DailyLog.log_date).label("week_start")
+        rows = (
+            await db.execute(
+                select(
+                    week_start,
+                    Material.name,
+                    func.sum(Material.total_cost).label("total_cost"),
+                    DailyLog.project_id,
+                )
+                .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                .where(DailyLog.project_id.in_(project_ids))
+                .group_by(week_start, Material.name, DailyLog.project_id)
+                .order_by(week_start)
+            )
+        ).all()
+        logger.debug(f"MATERIAL_TRENDS | project_ids={project_ids} | all_time_weekly=True | rows={len(rows)}")
+        return [
+            MaterialWeeklyTrend(
+                week=week_start.strftime("%Y-%m-%d"),
+                material_name=name,
+                total_cost=float(cost),
+                project_id=proj_id,
+            )
+            for week_start, name, cost, proj_id in rows
+        ]
 
     if limit_weeks is not None:
         # Aggregate mode: group by week, scoped to last N weeks
@@ -201,8 +230,8 @@ async def _get_material_trends(db: AsyncSession, project_ids: list[int], limit_w
     ]
 
 
-async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
-    cache_key = "dashboard:owner"
+async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> OwnerDashboard:
+    cache_key = f"dashboard:owner:{year or 'all'}"
     cached = await get_cache(cache_key)
     if cached:
         return OwnerDashboard.model_validate(cached)
@@ -214,19 +243,20 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
     total_spending = 0.0
 
     for project in active_projects:
-        actual = float(
-            (
-                await db.execute(
-                    select(func.sum(Material.total_cost))
-                    .join(DailyLog, DailyLog.id == Material.daily_log_id)
-                    .where(DailyLog.project_id == project.id)
-                )
-            ).scalar()
-            or 0.0
-        )
+        actual_q = select(func.sum(Material.total_cost)).join(DailyLog, DailyLog.id == Material.daily_log_id).where(DailyLog.project_id == project.id)
+        if year:
+            actual_q = actual_q.where(func.extract("year", DailyLog.log_date) == year)
+        actual = float((await db.execute(actual_q)).scalar() or 0.0)
 
         total_spending += actual
         is_over = actual > float(project.total_budget)
+
+        incidents_q = select(func.count(Incident.id)).join(DailyLog, DailyLog.id == Incident.daily_log_id).where(DailyLog.project_id == project.id)
+        if year:
+            incidents_q = incidents_q.where(func.extract("year", DailyLog.log_date) == year)
+        proj_incidents = (await db.execute(incidents_q)).scalar() or 0
+
+        proj_workers = (await db.execute(select(func.count(WorkerAssignment.user_id)).where(WorkerAssignment.project_id == project.id))).scalar() or 0
 
         project_summaries.append(
             ProjectBudgetSummary(
@@ -235,6 +265,8 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
                 total_budget=float(project.total_budget),
                 actual_spending=actual,
                 is_over_budget=is_over,
+                total_incidents=proj_incidents,
+                total_workers=proj_workers,
             )
         )
 
@@ -272,7 +304,7 @@ async def get_owner_dashboard(db: AsyncSession) -> OwnerDashboard:
     ).scalar() or 0
 
     deltas = await _get_dashboard_deltas(db=db, project_ids=active_project_ids)
-    material_trends = await _get_material_trends(db=db, project_ids=active_project_ids)
+    material_trends = await _get_material_trends(db=db, project_ids=active_project_ids, all_time_weekly=True)
     logger.info(
         f"OWNER_DASHBOARD | GET | role=owner | active_projects={len(active_projects)} | over_budget={len(over_budget)} | incidents_this_week={incidents_this_week}"
     )
