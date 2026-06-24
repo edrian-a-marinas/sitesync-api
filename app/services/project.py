@@ -171,6 +171,13 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
 
 
 async def unassign_user(project_id: int, user_id: int, type: str, current_user: User, db: AsyncSession) -> bool:
+    current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    is_owner = current_role and current_role.name == "owner"
+
+    if type == "manager" and not is_owner:
+        logger.warning(f"UNASSIGN_MANAGER | project_id={project_id} | user_id={user_id} | by={current_user.id} | status=forbidden")
+        return None
+
     if type == "manager":
         model = ProjectAssignment
         log_label = "UNASSIGN_MANAGER"

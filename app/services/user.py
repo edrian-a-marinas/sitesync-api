@@ -19,13 +19,10 @@ async def get_users(current_user: User, db: AsyncSession) -> list[User]:
         result = await db.execute(select(User))
         return result.scalars().all()
 
-    # PM — only users in their assigned projects
-    result = await db.execute(
-        select(User)
-        .join(ProjectAssignment, ProjectAssignment.user_id == User.id)
-        .where(ProjectAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
-    )
-    return result.scalars().unique().all()
+    # PM — all active site workers (for assignment purposes) + users in their assigned projects
+    worker_role = (await db.execute(select(Role).where(Role.name == "site_worker"))).scalar_one_or_none()
+    result = await db.execute(select(User).where((User.role_id == worker_role.id) & User.is_active))
+    return result.scalars().all()
 
 
 async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> User | None:

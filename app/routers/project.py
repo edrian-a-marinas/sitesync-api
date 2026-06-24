@@ -150,11 +150,13 @@ async def unassign_user(
     user_id: int,
     type: str,
     request: Request,
-    current_user: User = Depends(require_owner),
+    current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    success = await _unassign_user(project_id, user_id, type, current_user, db)
-    if not success:
+    result = await _unassign_user(project_id, user_id, type, current_user, db)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only owners can unassign managers")
+    if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
 
 
