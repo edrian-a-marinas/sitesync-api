@@ -52,5 +52,12 @@ class PhaseResponse(PhaseCreate):
         from_attributes = True
 
 
+class ProjectDetailResponse(ProjectResponse):
+    phases: list[PhaseResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
 class AssignUserRequest(BaseModel):
     user_id: int

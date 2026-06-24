@@ -11,6 +11,7 @@ from app.schemas.project import (
     PhaseResponse,
     PhaseUpdate,
     ProjectCreate,
+    ProjectDetailResponse,
     ProjectResponse,
     ProjectUpdate,
 )
@@ -53,7 +54,7 @@ async def get_projects(
     return await _get_projects(current_user, db, status)
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
+@router.get("/{project_id}", response_model=ProjectDetailResponse)
 @limiter.limit("30/minute")
 async def get_project_by_id(
     project_id: int,

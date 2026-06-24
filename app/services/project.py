@@ -2,6 +2,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.core.settings import settings
@@ -43,7 +44,7 @@ async def get_projects(current_user: User, db: AsyncSession, status: str | None 
 
 
 async def get_project_by_id(project_id: int, current_user: User, db: AsyncSession) -> Project | None:
-    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    project = (await db.execute(select(Project).options(selectinload(Project.phases)).where(Project.id == project_id))).scalar_one_or_none()
     if not project:
         logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
