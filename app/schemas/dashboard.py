@@ -55,6 +55,7 @@ class PhaseBudgetSummary(BaseModel):
 class ProjectManagerDashboard(BaseModel):
     project_id: int
     project_name: str
+    status: Literal["Active", "Completed"]
     logs_submitted: int
     attendance_rate: float
     total_material_cost: float

@@ -449,6 +449,7 @@ async def get_manager_dashboard(project_id: int, current_user: User, db: AsyncSe
     result = ProjectManagerDashboard(
         project_id=project.id,
         project_name=project.name,
+        status=project.status,
         logs_submitted=logs_count,
         attendance_rate=round(float(avg_hours), 2),
         total_material_cost=float(material_cost),
