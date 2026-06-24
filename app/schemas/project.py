@@ -52,8 +52,20 @@ class PhaseResponse(PhaseCreate):
         from_attributes = True
 
 
+class AssignedUserResponse(BaseModel):
+    id: int
+    first_name: str
+    last_name: str
+    email: str
+
+    class Config:
+        from_attributes = True
+
+
 class ProjectDetailResponse(ProjectResponse):
     phases: list[PhaseResponse] = []
+    managers: list[AssignedUserResponse] = []
+    workers: list[AssignedUserResponse] = []
 
     class Config:
         from_attributes = True

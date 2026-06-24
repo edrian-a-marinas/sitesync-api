@@ -14,7 +14,17 @@ from app.models.project import (
 )
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.project import AssignUserRequest, PhaseCreate, PhaseUpdate, ProjectCreate, ProjectResponse, ProjectUpdate
+from app.schemas.project import (
+    AssignedUserResponse,
+    AssignUserRequest,
+    PhaseCreate,
+    PhaseResponse,
+    PhaseUpdate,
+    ProjectCreate,
+    ProjectDetailResponse,
+    ProjectResponse,
+    ProjectUpdate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,23 +54,37 @@ async def get_projects(current_user: User, db: AsyncSession, status: str | None 
 
 
 async def get_project_by_id(project_id: int, current_user: User, db: AsyncSession) -> Project | None:
-    project = (await db.execute(select(Project).options(selectinload(Project.phases)).where(Project.id == project_id))).scalar_one_or_none()
+    project = (
+        await db.execute(
+            select(Project)
+            .options(
+                selectinload(Project.phases),
+                selectinload(Project.assignments).selectinload(ProjectAssignment.user),
+                selectinload(Project.worker_assignments).selectinload(WorkerAssignment.user),
+            )
+            .where(Project.id == project_id)
+        )
+    ).scalar_one_or_none()
     if not project:
         logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=not_found")
         return None
     current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
-    if current_role and current_role.name == "owner":
-        return project
-    # PM — check if assigned
-    assigned = (
-        await db.execute(
-            select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
-        )
-    ).scalar_one_or_none()
-    if not assigned:
-        logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=access_denied")
-        return None
-    return project
+    if current_role and current_role.name != "owner":
+        assigned = (
+            await db.execute(
+                select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not assigned:
+            logger.warning(f"PROJECT_GET | project_id={project_id} | user_id={current_user.id} | status=access_denied")
+            return None
+
+    return ProjectDetailResponse(
+        **ProjectDetailResponse.model_validate(project).model_dump(exclude={"managers", "workers", "phases"}),
+        phases=[PhaseResponse.model_validate(p) for p in project.phases],
+        managers=[AssignedUserResponse.model_validate(a.user) for a in project.assignments],
+        workers=[AssignedUserResponse.model_validate(w.user) for w in project.worker_assignments],
+    )
 
 
 async def create_project(data: ProjectCreate, current_user: User, db: AsyncSession) -> Project:
