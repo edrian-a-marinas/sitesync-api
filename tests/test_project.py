@@ -320,11 +320,11 @@ class TestUnassignUser:
         )
         assert res.status_code == 404
 
-    async def test_manager_cannot_unassign(self, manager_client: AsyncClient, seed_project_data, seed_users):
+    async def test_manager_cannot_unassign_manager(self, manager_client: AsyncClient, seed_project_data, seed_users):
         pid = seed_project_data["owner_project"].id
         res = await manager_client.delete(
             f"/api/v1/projects/{pid}/unassign",
-            params={"user_id": seed_users["worker"].id, "type": "worker"},
+            params={"user_id": seed_users["manager"].id, "type": "manager"},
         )
         assert res.status_code == 403
 
