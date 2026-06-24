@@ -170,6 +170,27 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
     return assignment
 
 
+async def unassign_user(project_id: int, user_id: int, type: str, current_user: User, db: AsyncSession) -> bool:
+    if type == "manager":
+        model = ProjectAssignment
+        log_label = "UNASSIGN_MANAGER"
+    else:
+        model = WorkerAssignment
+        log_label = "UNASSIGN_WORKER"
+
+    assignment = (await db.execute(select(model).where(model.project_id == project_id).where(model.user_id == user_id))).scalar_one_or_none()
+
+    if not assignment:
+        logger.warning(f"{log_label} | project_id={project_id} | user_id={user_id} | by={current_user.id} | status=not_found")
+        return False
+
+    await db.delete(assignment)
+    await db.commit()
+    await delete_pattern("projects:user:*")
+    logger.info(f"{log_label} | project_id={project_id} | user_id={user_id} | by={current_user.id} | status=success")
+    return True
+
+
 async def create_phase(project_id: int, data: PhaseCreate, current_user: User, db: AsyncSession) -> ProjectPhase | None:
     project = await get_project_by_id(project_id, current_user, db)
     if not project:
