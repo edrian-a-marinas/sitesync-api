@@ -28,6 +28,9 @@ from app.services.project import (
     create_project as _create_project,
 )
 from app.services.project import (
+    delete_project as _delete_project,
+)
+from app.services.project import (
     get_project_by_id as _get_project_by_id,
 )
 from app.services.project import (
@@ -92,6 +95,19 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def delete_project(
+    project_id: int,
+    request: Request,
+    current_user: User = Depends(require_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await _delete_project(project_id, current_user, db)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
 @router.post("/{project_id}/assign-manager", response_model=dict)
