@@ -1,9 +1,12 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 
 class ProjectBudgetSummary(BaseModel):
     project_id: int
     project_name: str
+    status: Literal["Active", "Completed"]
     total_budget: float
     actual_spending: float
     is_over_budget: bool

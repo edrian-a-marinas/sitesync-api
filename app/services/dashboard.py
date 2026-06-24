@@ -238,6 +238,8 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
     # Total active projects
     active_projects = (await db.execute(select(Project).where(Project.status == "Active"))).scalars().all()
     active_project_ids = [p.id for p in active_projects]
+    # All projects (active + completed) — needed so a specific completed project can still be selected and viewed
+    all_projects = (await db.execute(select(Project))).scalars().all()
     if year:
         active_project_ids_this_year = (
             (
@@ -252,8 +254,9 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
         )
     else:
         active_project_ids_this_year = active_project_ids
-    # Budget vs actual spending per project
-    projects_to_summarize = [p for p in active_projects if p.id in active_project_ids_this_year] if year else active_projects
+    # Budget vs actual spending per project — includes completed projects so a specific one can still be selected and viewed;
+    # aggregate views ("All Projects"/"All Years") filter to active-only on the frontend
+    projects_to_summarize = [p for p in active_projects if p.id in active_project_ids_this_year] if year else all_projects
     project_summaries = []
     total_spending = 0.0
     for project in projects_to_summarize:
@@ -276,6 +279,7 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
             ProjectBudgetSummary(
                 project_id=project.id,
                 project_name=project.name,
+                status=project.status,
                 total_budget=float(project.total_budget),
                 actual_spending=actual,
                 is_over_budget=is_over,
@@ -519,6 +523,7 @@ async def get_manager_aggregate_dashboard(current_user: User, db: AsyncSession) 
             ProjectBudgetSummary(
                 project_id=project.id,
                 project_name=project.name,
+                status=project.status,
                 total_budget=float(project.total_budget),
                 actual_spending=actual,
                 is_over_budget=is_over,
