@@ -246,3 +246,31 @@ class TestPhases:
             json={"name": "Finishing", "allocated_budget": 200000.0, "status": "Not Started"},
         )
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/projects/{project_id}
+# ---------------------------------------------------------------------------
+class TestProjectDelete:
+    async def test_owner_can_delete(self, owner_client: AsyncClient, seed_users):
+        # Create a fresh project to delete
+        res = await owner_client.post("/api/v1/projects", json=PROJECT_PAYLOAD)
+        assert res.status_code == 201
+        pid = res.json()["id"]
+
+        delete_res = await owner_client.delete(f"/api/v1/projects/{pid}")
+        assert delete_res.status_code == 204
+
+    async def test_manager_cannot_delete(self, manager_client: AsyncClient, seed_project_data):
+        pid = seed_project_data["owner_project"].id
+        res = await manager_client.delete(f"/api/v1/projects/{pid}")
+        assert res.status_code == 403
+
+    async def test_not_found(self, owner_client: AsyncClient):
+        res = await owner_client.delete("/api/v1/projects/99999")
+        assert res.status_code == 404
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient, seed_project_data):
+        pid = seed_project_data["owner_project"].id
+        res = await unauth_client.delete(f"/api/v1/projects/{pid}")
+        assert res.status_code == 401

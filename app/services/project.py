@@ -89,6 +89,19 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
     return project
 
 
+async def delete_project(project_id: int, current_user: User, db: AsyncSession) -> bool:
+    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    if not project:
+        logger.warning(f"PROJECT_DELETE | project_id={project_id} | user_id={current_user.id} | status=not_found")
+        return False
+    await db.delete(project)
+    await db.commit()
+    await delete_pattern("projects:user:*")
+    await delete_cache("dashboard:owner")
+    logger.info(f"PROJECT_DELETE | project_id={project_id} | deleted_by={current_user.id} | status=success")
+    return True
+
+
 async def assign_manager(project_id: int, data: AssignUserRequest, current_user: User, db: AsyncSession) -> ProjectAssignment | None:
     project = await get_project_by_id(project_id, current_user, db)
     if not project:
