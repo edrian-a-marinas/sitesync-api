@@ -274,3 +274,64 @@ class TestProjectDelete:
         pid = seed_project_data["owner_project"].id
         res = await unauth_client.delete(f"/api/v1/projects/{pid}")
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/v1/projects/{project_id}/unassign
+# ---------------------------------------------------------------------------
+class TestUnassignUser:
+    async def test_owner_can_unassign_manager(self, owner_client: AsyncClient, seed_users):
+        # create a fresh project
+        create_res = await owner_client.post("/api/v1/projects", json=PROJECT_PAYLOAD)
+        assert create_res.status_code == 201
+        pid = create_res.json()["id"]
+
+        await owner_client.post(
+            f"/api/v1/projects/{pid}/assign-manager",
+            json={"user_id": seed_users["manager"].id},
+        )
+        res = await owner_client.delete(
+            f"/api/v1/projects/{pid}/unassign",
+            params={"user_id": seed_users["manager"].id, "type": "manager"},
+        )
+        assert res.status_code == 204
+
+        # cleanup
+        await owner_client.delete(f"/api/v1/projects/{pid}")
+
+    async def test_owner_can_unassign_worker(self, owner_client: AsyncClient, seed_project_data, seed_users):
+        pid = seed_project_data["owner_project"].id
+        # first assign
+        await owner_client.post(
+            f"/api/v1/projects/{pid}/assign-worker",
+            json={"user_id": seed_users["worker"].id},
+        )
+        res = await owner_client.delete(
+            f"/api/v1/projects/{pid}/unassign",
+            params={"user_id": seed_users["worker"].id, "type": "worker"},
+        )
+        assert res.status_code == 204
+
+    async def test_not_found(self, owner_client: AsyncClient, seed_project_data):
+        pid = seed_project_data["owner_project"].id
+        res = await owner_client.delete(
+            f"/api/v1/projects/{pid}/unassign",
+            params={"user_id": 99999, "type": "manager"},
+        )
+        assert res.status_code == 404
+
+    async def test_manager_cannot_unassign(self, manager_client: AsyncClient, seed_project_data, seed_users):
+        pid = seed_project_data["owner_project"].id
+        res = await manager_client.delete(
+            f"/api/v1/projects/{pid}/unassign",
+            params={"user_id": seed_users["worker"].id, "type": "worker"},
+        )
+        assert res.status_code == 403
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient, seed_project_data, seed_users):
+        pid = seed_project_data["owner_project"].id
+        res = await unauth_client.delete(
+            f"/api/v1/projects/{pid}/unassign",
+            params={"user_id": seed_users["manager"].id, "type": "manager"},
+        )
+        assert res.status_code == 401

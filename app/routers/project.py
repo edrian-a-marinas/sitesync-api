@@ -37,6 +37,9 @@ from app.services.project import (
     get_projects as _get_projects,
 )
 from app.services.project import (
+    unassign_user as _unassign_user,
+)
+from app.services.project import (
     update_phase as _update_phase,
 )
 from app.services.project import (
@@ -138,6 +141,21 @@ async def assign_worker(
     if not assignment:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Project not found, access denied, or user is not a site worker")
     return {"message": "Worker assigned successfully"}
+
+
+@router.delete("/{project_id}/unassign", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def unassign_user(
+    project_id: int,
+    user_id: int,
+    type: str,
+    request: Request,
+    current_user: User = Depends(require_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    success = await _unassign_user(project_id, user_id, type, current_user, db)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assignment not found")
 
 
 @router.post("/{project_id}/phases", response_model=PhaseResponse, status_code=status.HTTP_201_CREATED)
