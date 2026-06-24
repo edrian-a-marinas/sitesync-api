@@ -20,7 +20,7 @@ class Project(Base):
     owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     location: Mapped[str] = mapped_column(String, nullable=False)
-    total_budget: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    total_budget: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     start_date: Mapped[Date] = mapped_column(Date, nullable=False)
     target_end_date: Mapped[Date] = mapped_column(Date, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="Active")  # Active, On Hold, Completed
@@ -41,7 +41,7 @@ class ProjectPhase(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)  # Foundation, Structure, Finishing
-    allocated_budget: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    allocated_budget: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="Not Started")  # Not Started, In Progress, Completed
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
