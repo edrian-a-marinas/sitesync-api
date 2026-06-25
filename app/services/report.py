@@ -127,6 +127,11 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
             week_start=week_start,
             week_end=week_end,
             s3_key=filename,
+            total_hours=float(total_hours),
+            total_material_cost=float(total_material_cost),
+            log_count=len(logs),
+            incident_count=len(incidents),
+            open_incident_count=len([i for i in incidents if i.status == "Open"]),
         )
         db.add(report)
         await db.commit()
@@ -213,6 +218,11 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
             week_start=week_start,
             week_end=week_end,
             s3_key=filename,
+            total_hours=float(total_hours),
+            total_material_cost=float(total_material_cost),
+            log_count=len(logs),
+            incident_count=len(incidents),
+            open_incident_count=len([i for i in incidents if i.status == "Open"]),
         )
         db.add(report)
         db.commit()
@@ -261,21 +271,32 @@ async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
         logger.info(f"REPORT | get_reports | project_id={project_id} | source=cache")
         return cached
     try:
-        result = await db.execute(select(Report).where(Report.project_id == project_id).order_by(Report.created_at.desc(), Report.week_start.desc()))
-        reports = result.scalars().all()
-        logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(reports)} | source=db")
+        result = await db.execute(
+            select(Report, User.first_name, User.last_name)
+            .join(User, User.id == Report.generated_by)
+            .where(Report.project_id == project_id)
+            .order_by(Report.created_at.desc(), Report.week_start.desc())
+        )
+        rows = result.all()
+        logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(rows)} | source=db")
         data = [
             {
                 "id": r.id,
                 "project_id": r.project_id,
                 "generated_by": r.generated_by,
+                "generated_by_name": f"{first_name} {last_name}",
                 "week_start": str(r.week_start),
                 "week_end": str(r.week_end),
                 "s3_key": r.s3_key,
                 "file_url": _get_file_url(r.s3_key),
+                "total_hours": float(r.total_hours),
+                "total_material_cost": float(r.total_material_cost),
+                "log_count": r.log_count,
+                "incident_count": r.incident_count,
+                "open_incident_count": r.open_incident_count,
                 "created_at": str(r.created_at),
             }
-            for r in reports
+            for r, first_name, last_name in rows
         ]
         await set_cache(cache_key, data, ttl=3600)
         return data
