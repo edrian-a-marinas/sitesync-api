@@ -28,6 +28,11 @@ async def trigger_report(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if await report_exists_this_week(project_id, db):
         raise HTTPException(status_code=status.HTTP_200_OK, detail="Report already exists for this week")
+    if not generate_weekly_report.app.control.ping(timeout=1.0):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Report generation service is currently unavailable. Please try again later.",
+        )
     generate_weekly_report.delay(project_id, current_user.id)
     raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail="Report generation started")
 
