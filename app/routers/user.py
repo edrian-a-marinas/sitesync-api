@@ -33,6 +33,17 @@ async def get_users(
     return await _get_users(current_user, db)
 
 
+@router.get("/{user_id}/assignments", response_model=list[dict])
+@limiter.limit("30/minute")
+async def get_user_assignments(
+    user_id: int,
+    request: Request,
+    current_user: User = Depends(require_owner_or_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _get_user_assignments(user_id, current_user, db)
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 @limiter.limit("30/minute")
 async def get_user_by_id(
@@ -45,17 +56,6 @@ async def get_user_by_id(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
-
-
-@router.get("/{user_id}/assignments", response_model=list[dict])
-@limiter.limit("30/minute")
-async def get_user_assignments(
-    user_id: int,
-    request: Request,
-    current_user: User = Depends(require_owner_or_manager),
-    db: AsyncSession = Depends(get_db),
-):
-    return await _get_user_assignments(user_id, current_user, db)
 
 
 @router.patch("/{user_id}", response_model=UserResponse)
