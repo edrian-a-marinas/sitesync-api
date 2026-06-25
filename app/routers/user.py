@@ -27,10 +27,11 @@ router = APIRouter(prefix="/users", tags=["Users"])
 @limiter.limit("30/minute")
 async def get_users(
     request: Request,
+    scope: str | None = None,
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_users(current_user, db)
+    return await _get_users(current_user, db, scope)
 
 
 @router.get("/{user_id}/assignments", response_model=list[dict])

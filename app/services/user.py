@@ -5,7 +5,7 @@ from sqlalchemy.future import select
 
 from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.user import User
-from app.schemas.auth import UserUpdateRequest
+from app.schemas.auth import UserResponse, UserUpdateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -13,17 +13,34 @@ logger = logging.getLogger(__name__)
 from app.models.role import Role
 
 
-async def get_users(current_user: User, db: AsyncSession) -> list[User]:
+async def get_users(current_user: User, db: AsyncSession, scope: str | None = None) -> list[UserResponse]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     if role and role.name == "owner":
         result = await db.execute(select(User))
-        return result.scalars().all()
+        users = result.scalars().all()
+    else:
+        # PM — scope=mine returns only mutual project site workers, otherwise all site workers
+        worker_role = (await db.execute(select(Role).where(Role.name == "site_worker"))).scalar_one_or_none()
+        if scope == "mine":
+            pm_project_ids = select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
+            worker_ids = select(WorkerAssignment.user_id).where(WorkerAssignment.project_id.in_(pm_project_ids))
+            result = await db.execute(select(User).where(User.role_id == worker_role.id).where(User.id.in_(worker_ids)).distinct())
+        else:
+            result = await db.execute(select(User).where(User.role_id == worker_role.id))
+        users = result.scalars().all()
 
-    # PM — only active site workers in their assigned projects
-    pm_project_ids = select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
-    worker_ids = select(WorkerAssignment.user_id).where(WorkerAssignment.project_id.in_(pm_project_ids))
-    result = await db.execute(select(User).where(User.id.in_(worker_ids)).distinct())
-    return result.scalars().all()
+    # Fetch all assigned user IDs in one query
+    assigned_pm_ids = set((await db.execute(select(ProjectAssignment.user_id).distinct())).scalars().all())
+    assigned_worker_ids = set((await db.execute(select(WorkerAssignment.user_id).distinct())).scalars().all())
+    assigned_ids = assigned_pm_ids | assigned_worker_ids
+
+    return [
+        UserResponse(
+            **{c.name: getattr(u, c.name) for c in u.__table__.columns},
+            has_assignments=u.id in assigned_ids,
+        )
+        for u in users
+    ]
 
 
 async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> User | None:
