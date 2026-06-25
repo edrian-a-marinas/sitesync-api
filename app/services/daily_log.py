@@ -82,8 +82,16 @@ async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: 
     return await _to_response(log, db)
 
 
-async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, current_user: User, db: AsyncSession) -> DailyLog | None:
-    log = await get_daily_log_by_id(project_id, log_id, current_user, db)
+async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, current_user: User, db: AsyncSession) -> DailyLogResponse | None:
+    if not await _is_owner(current_user, db):
+        assigned = (
+            await db.execute(
+                select(ProjectAssignment).where(ProjectAssignment.project_id == project_id).where(ProjectAssignment.user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not assigned:
+            return None
+    log = (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
     if not log:
         return None
     for field, value in data.model_dump(exclude_none=True).items():
