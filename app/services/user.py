@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.project import ProjectAssignment
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.user import User
 from app.schemas.auth import UserUpdateRequest
 
@@ -43,6 +43,44 @@ async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> 
         )
     ).scalar_one_or_none()
     return user if in_project else None
+
+
+async def get_user_assignments(user_id: int, current_user: User, db: AsyncSession) -> list[dict]:
+    target_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target_user:
+        return []
+
+    target_role = (await db.execute(select(Role).where(Role.id == target_user.role_id))).scalar_one_or_none()
+    if not target_role:
+        return []
+
+    results = []
+
+    if target_role.name == "project_manager":
+        rows = (
+            (
+                await db.execute(
+                    select(Project).join(ProjectAssignment, ProjectAssignment.project_id == Project.id).where(ProjectAssignment.user_id == user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        results = [{"id": p.id, "name": p.name, "location": p.location, "status": p.status, "role": "Project Manager"} for p in rows]
+
+    elif target_role.name == "site_worker":
+        rows = (
+            (
+                await db.execute(
+                    select(Project).join(WorkerAssignment, WorkerAssignment.project_id == Project.id).where(WorkerAssignment.user_id == user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        results = [{"id": p.id, "name": p.name, "location": p.location, "status": p.status, "role": "Site Worker"} for p in rows]
+
+    return results
 
 
 async def update_user_by_id(user_id: int, data: UserUpdateRequest, current_user: User, db: AsyncSession) -> User | None:
