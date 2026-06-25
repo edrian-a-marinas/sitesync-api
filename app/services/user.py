@@ -22,7 +22,7 @@ async def get_users(current_user: User, db: AsyncSession) -> list[User]:
     # PM — only active site workers in their assigned projects
     pm_project_ids = select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
     worker_ids = select(WorkerAssignment.user_id).where(WorkerAssignment.project_id.in_(pm_project_ids))
-    result = await db.execute(select(User).where(User.id.in_(worker_ids), User.is_active).distinct())
+    result = await db.execute(select(User).where(User.id.in_(worker_ids)).distinct())
     return result.scalars().all()
 
 
