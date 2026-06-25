@@ -19,9 +19,10 @@ async def get_users(current_user: User, db: AsyncSession) -> list[User]:
         result = await db.execute(select(User))
         return result.scalars().all()
 
-    # PM — all active site workers (for assignment purposes) + users in their assigned projects
-    worker_role = (await db.execute(select(Role).where(Role.name == "site_worker"))).scalar_one_or_none()
-    result = await db.execute(select(User).where((User.role_id == worker_role.id) & User.is_active))
+    # PM — only active site workers in their assigned projects
+    pm_project_ids = select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)
+    worker_ids = select(WorkerAssignment.user_id).where(WorkerAssignment.project_id.in_(pm_project_ids))
+    result = await db.execute(select(User).where(User.id.in_(worker_ids), User.is_active).distinct())
     return result.scalars().all()
 
 
@@ -33,12 +34,12 @@ async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> 
     if role and role.name == "owner":
         return user
 
-    # PM — verify user is in their projects
+    # PM — verify worker shares a project with them
     in_project = (
         await db.execute(
-            select(ProjectAssignment)
-            .where(ProjectAssignment.user_id == user_id)
-            .where(ProjectAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
+            select(WorkerAssignment)
+            .where(WorkerAssignment.user_id == user_id)
+            .where(WorkerAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
             .limit(1)
         )
     ).scalar_one_or_none()
@@ -102,7 +103,20 @@ async def set_user_status(user_id: int, is_active: bool, current_user: User, db:
         return None
     if not current_role or current_role.name != "owner":
         user_role = (await db.execute(select(Role).where(Role.id == user.role_id))).scalar_one_or_none()
-        if user.created_by != current_user.id or not user_role or user_role.name != "site_worker":
+        if not user_role or user_role.name != "site_worker":
+            logger.warning(f"USER_ACTIVE | user_id={user_id} | attempted_by={current_user.id} | status=forbidden")
+            return None
+        shared_project = (
+            await db.execute(
+                select(WorkerAssignment)
+                .where(
+                    WorkerAssignment.user_id == user_id,
+                    WorkerAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)),
+                )
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if not shared_project:
             logger.warning(f"USER_ACTIVE | user_id={user_id} | attempted_by={current_user.id} | status=forbidden")
             return None
     user.is_active = is_active
