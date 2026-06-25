@@ -20,6 +20,7 @@ class DailyLogResponse(DailyLogCreate):
     id: int
     project_id: int
     submitted_by: int
+    submitted_by_name: str
 
     class Config:
         from_attributes = True

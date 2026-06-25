@@ -8,7 +8,7 @@ from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.daily_log import DailyLogCreate, DailyLogUpdate
+from app.schemas.daily_log import DailyLogCreate, DailyLogResponse, DailyLogUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,22 @@ async def _is_owner(current_user: User, db: AsyncSession) -> bool:
     return role is not None and role.name == "owner"
 
 
-async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLog]:
+async def _to_response(log: DailyLog, db: AsyncSession) -> DailyLogResponse:
+    user = (await db.execute(select(User).where(User.id == log.submitted_by))).scalar_one_or_none()
+    full_name = f"{user.first_name} {user.last_name}" if user else "Unknown"
+    return DailyLogResponse(
+        id=log.id,
+        project_id=log.project_id,
+        submitted_by=log.submitted_by,
+        submitted_by_name=full_name,
+        log_date=log.log_date,
+        weather_condition=log.weather_condition,
+        work_accomplished=log.work_accomplished,
+        notes=log.notes,
+    )
+
+
+async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLogResponse]:
     if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
@@ -27,12 +42,12 @@ async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) 
         ).scalar_one_or_none()
         if not assigned:
             return []
-
     result = await db.execute(select(DailyLog).where(DailyLog.project_id == project_id))
-    return result.scalars().all()
+    logs = result.scalars().all()
+    return [await _to_response(log, db) for log in logs]
 
 
-async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLog | None:
+async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLogResponse | None:
     if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
@@ -41,7 +56,10 @@ async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, 
         ).scalar_one_or_none()
         if not assigned:
             return None
-    return (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
+    log = (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
+    if not log:
+        return None
+    return await _to_response(log, db)
 
 
 async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: User, db: AsyncSession) -> DailyLog | None:
@@ -61,7 +79,7 @@ async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: 
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
     logger.info(f"LOG_CREATE | project_id={project_id} | log_id={log.id} | submitted_by={current_user.id} | status=success")
-    return log
+    return await _to_response(log, db)
 
 
 async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, current_user: User, db: AsyncSession) -> DailyLog | None:
@@ -76,4 +94,4 @@ async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, c
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
     logger.info(f"LOG_UPDATE | project_id={project_id} | log_id={log_id} | updated_by={current_user.id} | status=success")
-    return log
+    return await _to_response(log, db)
