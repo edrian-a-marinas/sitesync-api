@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from sqlalchemy import delete
 
 from app.core.security import hash_password
-from app.models.project import Project, ProjectAssignment
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.user import User
 
 # ---------------------------------------------------------------------------
@@ -32,12 +32,13 @@ async def seed_user_project(test_session_factory, seed_users):
             session.add_all(
                 [
                     ProjectAssignment(project_id=project.id, user_id=seed_users["manager"].id),
-                    ProjectAssignment(project_id=project.id, user_id=seed_users["worker"].id),
+                    WorkerAssignment(project_id=project.id, user_id=seed_users["worker"].id),
                 ]
             )
     yield project
     async with test_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(WorkerAssignment).where(WorkerAssignment.project_id == project.id))
             await session.execute(delete(ProjectAssignment).where(ProjectAssignment.project_id == project.id))
             await session.execute(delete(Project).where(Project.id == project.id))
 
@@ -45,6 +46,8 @@ async def seed_user_project(test_session_factory, seed_users):
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def seed_user_extras(test_session_factory, seed_users):
     """Extra users needed for deactivate/activate tests — created once, cleaned up once."""
+
+    # Worker shared with manager via project
     manager_created_worker = User(
         email="created_worker@test.com",
         password_hash=hash_password("password123"),
@@ -52,8 +55,8 @@ async def seed_user_extras(test_session_factory, seed_users):
         last_name="Worker",
         role_id=seed_users["worker_role"].id,
         is_active=True,
-        created_by=seed_users["manager"].id,
     )
+    # Worker NOT in any of manager's projects
     owner_created_worker = User(
         email="owner_created_worker@test.com",
         password_hash=hash_password("password123"),
@@ -61,7 +64,6 @@ async def seed_user_extras(test_session_factory, seed_users):
         last_name="Created",
         role_id=seed_users["worker_role"].id,
         is_active=True,
-        created_by=seed_users["owner"].id,
     )
     manager2 = User(
         email="manager2_user@test.com",
@@ -70,7 +72,6 @@ async def seed_user_extras(test_session_factory, seed_users):
         last_name="Two",
         role_id=seed_users["manager_role"].id,
         is_active=True,
-        created_by=seed_users["manager"].id,
     )
     inactive_worker = User(
         email="inactive_worker@test.com",
@@ -80,6 +81,7 @@ async def seed_user_extras(test_session_factory, seed_users):
         role_id=seed_users["worker_role"].id,
         is_active=False,
     )
+    # Inactive worker shared with manager via project
     inactive_created_worker = User(
         email="inactive_created_worker@test.com",
         password_hash=hash_password("password123"),
@@ -87,8 +89,8 @@ async def seed_user_extras(test_session_factory, seed_users):
         last_name="Created",
         role_id=seed_users["worker_role"].id,
         is_active=False,
-        created_by=seed_users["manager"].id,
     )
+    # Inactive worker NOT in any of manager's projects
     other_inactive_worker = User(
         email="other_inactive_worker@test.com",
         password_hash=hash_password("password123"),
@@ -96,7 +98,6 @@ async def seed_user_extras(test_session_factory, seed_users):
         last_name="Inactive",
         role_id=seed_users["worker_role"].id,
         is_active=False,
-        created_by=seed_users["owner"].id,
     )
     async with test_session_factory() as session:
         async with session.begin():
@@ -110,6 +111,29 @@ async def seed_user_extras(test_session_factory, seed_users):
                     other_inactive_worker,
                 ]
             )
+            await session.flush()
+
+            # Project shared between manager and manager_created_worker / inactive_created_worker
+            extras_project = Project(
+                owner_id=seed_users["owner"].id,
+                name="Extras Test Project",
+                location="Manila",
+                total_budget=500_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
+            )
+            session.add(extras_project)
+            await session.flush()
+
+            session.add_all(
+                [
+                    ProjectAssignment(project_id=extras_project.id, user_id=seed_users["manager"].id),
+                    WorkerAssignment(project_id=extras_project.id, user_id=manager_created_worker.id),
+                    WorkerAssignment(project_id=extras_project.id, user_id=inactive_created_worker.id),
+                ]
+            )
+
     yield {
         "manager_created_worker": manager_created_worker,
         "owner_created_worker": owner_created_worker,
@@ -117,8 +141,13 @@ async def seed_user_extras(test_session_factory, seed_users):
         "inactive_worker": inactive_worker,
         "inactive_created_worker": inactive_created_worker,
         "other_inactive_worker": other_inactive_worker,
+        "extras_project": extras_project,
     }
     async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(WorkerAssignment).where(WorkerAssignment.project_id == extras_project.id))
+            await session.execute(delete(ProjectAssignment).where(ProjectAssignment.project_id == extras_project.id))
+            await session.execute(delete(Project).where(Project.id == extras_project.id))
         async with session.begin():
             await session.execute(
                 delete(User).where(
@@ -266,12 +295,12 @@ class TestDeactivateUser:
         assert res.status_code == 200
         assert res.json()["is_active"] is False
 
-    async def test_manager_can_deactivate_own_created_worker(self, manager_client: AsyncClient, seed_user_extras):
+    async def test_manager_can_deactivate_shared_project_worker(self, manager_client: AsyncClient, seed_user_extras):
         res = await manager_client.patch(f"/api/v1/users/{seed_user_extras['manager_created_worker'].id}/deactivate")
         assert res.status_code == 200
         assert res.json()["is_active"] is False
 
-    async def test_manager_cannot_deactivate_worker_created_by_other(self, manager_client: AsyncClient, seed_user_extras):
+    async def test_manager_cannot_deactivate_unrelated_worker(self, manager_client: AsyncClient, seed_user_extras):
         res = await manager_client.patch(f"/api/v1/users/{seed_user_extras['owner_created_worker'].id}/deactivate")
         assert res.status_code == 403
 
@@ -303,12 +332,12 @@ class TestActivateUser:
         assert res.status_code == 200
         assert res.json()["is_active"] is True
 
-    async def test_manager_can_activate_own_created_worker(self, manager_client: AsyncClient, seed_user_extras):
+    async def test_manager_can_activate_shared_project_worker(self, manager_client: AsyncClient, seed_user_extras):
         res = await manager_client.patch(f"/api/v1/users/{seed_user_extras['inactive_created_worker'].id}/activate")
         assert res.status_code == 200
         assert res.json()["is_active"] is True
 
-    async def test_manager_cannot_activate_worker_created_by_other(self, manager_client: AsyncClient, seed_user_extras):
+    async def test_manager_cannot_activate_unrelated_worker(self, manager_client: AsyncClient, seed_user_extras):
         res = await manager_client.patch(f"/api/v1/users/{seed_user_extras['other_inactive_worker'].id}/activate")
         assert res.status_code == 403
 
