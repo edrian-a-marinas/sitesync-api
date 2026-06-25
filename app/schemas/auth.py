@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
     last_name: str
     role_id: int
     is_active: bool
+    has_assignments: bool = False
 
     class Config:
         from_attributes = True
