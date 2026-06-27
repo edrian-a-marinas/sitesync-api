@@ -11,6 +11,7 @@ class ReportResponse(BaseModel):
     week_start: date
     week_end: date
     s3_key: str
+    source: str
     file_url: str | None = None
     total_hours: float
     total_material_cost: float
