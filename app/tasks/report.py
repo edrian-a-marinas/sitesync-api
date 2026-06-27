@@ -19,7 +19,7 @@ def generate_weekly_report(project_id: int, generated_by: int):
 def _generate_weekly_report(project_id: int, generated_by: int):
     with make_celery_sync_session()() as db:
         try:
-            result = report.generate_report_sync(project_id, generated_by, db)
+            result = report.generate_report_sync(project_id, generated_by, db, source="scheduled")
             if result:
                 import redis
 

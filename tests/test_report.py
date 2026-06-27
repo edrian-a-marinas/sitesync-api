@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 import pytest_asyncio
@@ -95,6 +95,34 @@ class TestTriggerReport:
         res = await unauth_client.post(generate_url(d["project"].id))
         assert res.status_code == 401
 
+    async def test_trigger_report_already_exists_returns_200(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            async with session.begin():
+                project = Project(
+                    owner_id=seed_users["owner"].id,
+                    name="Existing Report Project",
+                    location="Manila",
+                    total_budget=500_000,
+                    start_date=date(2026, 1, 1),
+                    target_end_date=date(2026, 12, 31),
+                    status="Active",
+                )
+                session.add(project)
+                await session.flush()
+                week_start = date.today() - timedelta(days=7)
+                session.add(
+                    Report(
+                        project_id=project.id,
+                        generated_by=seed_users["owner"].id,
+                        week_start=week_start,
+                        week_end=date.today(),
+                        s3_key=f"reports/report_{project.id}_{week_start}.txt",
+                    )
+                )
+        res = await owner_client.post(generate_url(project.id))
+        assert res.status_code == 200
+        assert res.json()["status"] == "exists"
+
 
 # ---------------------------------------------------------------------------
 # GET /reports/{project_id}
@@ -124,6 +152,7 @@ class TestGetReports:
         assert "week_end" in data
         assert "s3_key" in data
         assert "file_url" in data
+        assert data["source"] == "manual"
 
     async def test_assigned_manager_can_list_reports(self, manager_client: AsyncClient, seed_users, seed_report_data, test_session_factory):
         d = seed_report_data

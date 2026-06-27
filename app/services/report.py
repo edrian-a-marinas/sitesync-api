@@ -50,7 +50,7 @@ async def report_exists_this_week(project_id: int, db: AsyncSession) -> bool:
     return False
 
 
-async def generate_report(project_id: int, generated_by: int, db: AsyncSession) -> Report | None:
+async def generate_report(project_id: int, generated_by: int, db: AsyncSession, source: str = "manual") -> Report | None:
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
 
@@ -127,6 +127,7 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
             week_start=week_start,
             week_end=week_end,
             s3_key=filename,
+            source=source,
             total_hours=float(total_hours),
             total_material_cost=float(total_material_cost),
             log_count=len(logs),
@@ -136,15 +137,14 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession) 
         db.add(report)
         await db.commit()
         await db.refresh(report)
-        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=success")
+        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | status=success")
         return report
-
     except Exception as e:
         logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
         return None
 
 
-def generate_report_sync(project_id: int, generated_by: int, db) -> Report | None:
+def generate_report_sync(project_id: int, generated_by: int, db, source: str = "manual") -> Report | None:
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
     project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
@@ -218,6 +218,7 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
             week_start=week_start,
             week_end=week_end,
             s3_key=filename,
+            source=source,
             total_hours=float(total_hours),
             total_material_cost=float(total_material_cost),
             log_count=len(logs),
@@ -227,9 +228,8 @@ def generate_report_sync(project_id: int, generated_by: int, db) -> Report | Non
         db.add(report)
         db.commit()
         db.refresh(report)
-        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=success")
+        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | status=success")
         return report
-
     except Exception as e:
         if "uq_report_project_week" in str(e):
             logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=skipped | reason=already exists")
@@ -288,6 +288,7 @@ async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
                 "week_start": str(r.week_start),
                 "week_end": str(r.week_end),
                 "s3_key": r.s3_key,
+                "source": r.source,
                 "file_url": _get_file_url(r.s3_key),
                 "total_hours": float(r.total_hours),
                 "total_material_cost": float(r.total_material_cost),
