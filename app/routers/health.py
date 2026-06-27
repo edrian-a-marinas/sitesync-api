@@ -2,7 +2,7 @@ import asyncio
 import time
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
 from app.core.cache import redis_client
@@ -21,17 +21,16 @@ async def health_check():
 
 
 @router.get("/db")
-async def db_connection_check():
+async def db_connection_check(response: Response):
     try:
         async with AsyncSessionLocal() as session:
             await session.execute(text("SELECT 1"))
-
         return {
             "status": "ok",
             "database": "connected",
         }
-
     except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {
             "status": "error",
             "database": "disconnected",
@@ -40,53 +39,59 @@ async def db_connection_check():
 
 
 @router.get("/redis")
-async def redis_health():
+async def redis_health(response: Response):
     try:
         start = time.monotonic()
         await redis_client.ping()
         latency_ms = round((time.monotonic() - start) * 1000, 2)
         return {"status": "ok", "redis": "connected", "latency_ms": latency_ms}
     except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "redis": "disconnected", "detail": str(e)}
 
 
 @router.get("/celery")
-async def celery_health():
+async def celery_health(response: Response):
     try:
         inspector = celery_app.control.inspect(timeout=2.0)
         result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
         if not result:
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
             return {"status": "error", "celery": "no workers responding"}
         return {"status": "ok", "celery": "connected", "workers": len(result)}
     except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "celery": "disconnected", "detail": str(e)}
 
 
 @router.get("/groq")
-async def groq_health():
+async def groq_health(response: Response):
     results = {}
-
     try:
         start = time.monotonic()
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(
+            groq_response = await client.get(
                 "https://api.groq.com/openai/v1/models",
                 headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
             )
         latency_ms = round((time.monotonic() - start) * 1000, 2)
+        is_ok = groq_response.status_code == 200
         results["groq"] = {
-            "status": "ok" if response.status_code == 200 else "error",
-            "http_status": response.status_code,
+            "status": "ok" if is_ok else "error",
+            "http_status": groq_response.status_code,
             "latency_ms": latency_ms,
         }
+        if not is_ok:
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "ok" if is_ok else "error", "groq": results}
     except Exception as e:
         results["groq"] = {"status": "error", "detail": str(e)}
-
-    return {"status": "ok", "groq": results}
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "error", "groq": results}
 
 
 @router.get("/s3")
-async def s3_health():
+async def s3_health(response: Response):
     try:
         from app.services.s3 import get_s3_client
 
@@ -99,4 +104,5 @@ async def s3_health():
         latency_ms = round((time.monotonic() - start) * 1000, 2)
         return {"status": "ok", "s3": "connected", "latency_ms": latency_ms}
     except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "s3": "disconnected", "detail": str(e)}
