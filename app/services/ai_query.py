@@ -365,6 +365,6 @@ async def get_query(query_id: int, current_user: User, db: AsyncSession) -> AIQu
     return query
 
 
-async def get_queries(current_user: User, db: AsyncSession) -> list[AIQuery]:
-    result = await db.execute(select(AIQuery).where(AIQuery.user_id == current_user.id))
+async def get_queries(current_user: User, db: AsyncSession, skip: int = 0, limit: int = 10) -> list[AIQuery]:
+    result = await db.execute(select(AIQuery).where(AIQuery.user_id == current_user.id).order_by(AIQuery.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()

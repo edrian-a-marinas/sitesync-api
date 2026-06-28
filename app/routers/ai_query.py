@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner
@@ -53,7 +53,9 @@ async def get_query(
 @limiter.limit("30/minute")
 async def get_queries(
     request: Request,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=50),
     current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_queries(current_user, db)
+    return await _get_queries(current_user, db, skip=skip, limit=limit)
