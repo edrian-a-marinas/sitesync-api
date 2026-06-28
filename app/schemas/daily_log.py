@@ -24,3 +24,10 @@ class DailyLogResponse(DailyLogCreate):
 
     class Config:
         from_attributes = True
+
+
+class DailyLogListResponse(BaseModel):
+    items: list[DailyLogResponse]
+    total: int
+    page: int
+    page_size: int
