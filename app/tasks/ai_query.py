@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
+import groq
 from groq import Groq
 from sqlalchemy.future import select
 
@@ -46,19 +47,30 @@ RULES:
 PROJECT DATA:
 {context}
 QUESTION: {query.question}"""
-
             response = client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=500,
             )
-
             query.answer = response.choices[0].message.content
             query.status = "Done"
             logger.info(f"AI_QUERY | query_id={query_id} | status=done")
-
+        except groq.RateLimitError as e:
+            retry_after = None
+            try:
+                retry_after = int(e.response.headers.get("retry-after", 60))
+            except Exception:
+                retry_after = 60
+            query.status = "Failed"
+            query.answer = f"RATE_LIMIT:{retry_after}"
+            logger.warning(f"AI_QUERY | query_id={query_id} | status=rate_limited | retry_after={retry_after}s")
+        except groq.APITimeoutError:
+            query.status = "Failed"
+            query.answer = "TIMEOUT"
+            logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason=timeout")
         except Exception as e:
             query.status = "Failed"
+            query.answer = "ERROR"
             logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason={str(e)}")
         finally:
             await db.commit()
@@ -71,14 +83,25 @@ def cleanup_old_ai_queries():
 
 async def _cleanup_old_ai_queries():
     cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+    stale_cutoff = datetime.now(timezone.utc) - timedelta(minutes=settings.PENDING_TIMEOUT_MINUTES)
     async with make_celery_session()() as db:
         try:
+            # Mark stale pending queries as failed
+            stale_result = await db.execute(select(AIQuery).where(AIQuery.status == "Pending").where(AIQuery.created_at < stale_cutoff))
+            stale_queries = stale_result.scalars().all()
+            for query in stale_queries:
+                query.status = "Failed"
+                query.answer = "TIMEOUT"
+            if stale_queries:
+                await db.commit()
+                logger.warning(f"AI_QUERY_CLEANUP | expired_pending={len(stale_queries)}")
+
+            # Delete queries older than 90 days
             result = await db.execute(select(AIQuery).where(AIQuery.created_at < cutoff))
             old_queries = result.scalars().all()
-            count = len(old_queries)
             for query in old_queries:
                 await db.delete(query)
             await db.commit()
-            logger.info(f"AI_QUERY_CLEANUP | deleted={count} | cutoff={cutoff.date()}")
+            logger.info(f"AI_QUERY_CLEANUP | deleted={len(old_queries)} | cutoff={cutoff.date()}")
         except Exception as e:
             logger.error(f"AI_QUERY_CLEANUP | status=failed | reason={str(e)}")

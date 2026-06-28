@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -13,6 +15,7 @@ class AIQueryResponse(BaseModel):
     question: str
     answer: str | None
     status: str
+    created_at: datetime
 
     class Config:
         from_attributes = True
