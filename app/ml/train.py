@@ -3,7 +3,8 @@ import os
 
 import joblib
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor as _Reg
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,25 @@ def train_budget_overrun(records: list[dict]) -> None:
         logger.warning("ML_TRAIN | budget_overrun | skipped — not enough data")
         return
 
-    features = ["spend_rate", "incident_count", "log_count", "days_elapsed", "typhoon_log_ratio"]
-    X = df[features].fillna(0).astype(float)
-    y = df["is_over_budget"].astype(int)
+    df = df.fillna(0)
+    df["spend_rate"] = df["spend_rate"].astype(float).clip(0, 2)
+    df["incident_count"] = df["incident_count"].astype(float)
+    df["typhoon_log_ratio"] = df["typhoon_log_ratio"].astype(float).clip(0, 1)
 
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Synthetic overrun probability label:
+    # spend_rate > 1.0 = already over budget (highest risk)
+    # spend_rate approaching 1.0 with high incidents = escalating risk
+    y = (
+        df["spend_rate"].clip(0, 1) * 0.70
+        + (df["incident_count"] / df["incident_count"].max().clip(1)).clip(0, 1) * 0.20
+        + df["typhoon_log_ratio"] * 0.10
+    ).clip(0, 1)
+
+    features = ["spend_rate", "incident_count", "log_count", "days_elapsed", "typhoon_log_ratio"]
+    X = df[features].astype(float)
+
+    # Use regressor — predicts a continuous risk probability (0-1)
+    model = _Reg(n_estimators=100, random_state=42)
     model.fit(X, y)
 
     _ensure_models_dir()

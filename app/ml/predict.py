@@ -18,22 +18,25 @@ def _load(filename: str):
 
 
 def predict_budget_overrun(records: list[dict]) -> list[dict]:
-    model = _load("budget_overrun.joblib")
-    if not model or not records:
+    if not records:
         return []
+    df = pd.DataFrame(records).fillna(0)
+    df["spend_rate"] = df["spend_rate"].astype(float).clip(0, 2)
+    df["incident_count"] = df["incident_count"].astype(float)
+    df["typhoon_log_ratio"] = df["typhoon_log_ratio"].astype(float).clip(0, 1)
+    max_incidents = df["incident_count"].max() or 1
 
-    df = pd.DataFrame(records)
-    features = ["spend_rate", "incident_count", "log_count", "days_elapsed", "typhoon_log_ratio"]
-    X = df[features].fillna(0).astype(float)
+    overrun_probability = (
+        df["spend_rate"].clip(0, 1) * 0.70 + (df["incident_count"] / max_incidents).clip(0, 1) * 0.20 + df["typhoon_log_ratio"] * 0.10
+    ).clip(0, 1)
 
-    proba = model.predict_proba(X)[:, 1]  # probability of overrun
     results = []
     for i, row in df.iterrows():
         results.append(
             {
                 "project_id": int(row["project_id"]),
                 "project_name": row["project_name"],
-                "overrun_probability": round(float(proba[i]), 3),
+                "overrun_probability": round(float(overrun_probability[i]), 3),
                 "is_over_budget": bool(row["is_over_budget"]),
                 "total_budget": float(row["total_budget"]),
                 "total_spent": float(row["total_spent"]),
