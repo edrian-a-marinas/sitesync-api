@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.auth import UserResponse, UserUpdateRequest
+from app.schemas.auth import UserListResponse, UserResponse, UserUpdateRequest
 from app.services.user import get_user_assignments as _get_user_assignments
 from app.services.user import (
     get_user_by_id as _get_user_by_id,
@@ -23,15 +23,18 @@ from app.services.user import (
 router = APIRouter(prefix="/users", tags=["Users"])
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("", response_model=UserListResponse)
 @limiter.limit("30/minute")
 async def get_users(
     request: Request,
     scope: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+    search: str | None = Query(default=None, max_length=100),
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_users(current_user, db, scope)
+    return await _get_users(current_user, db, scope, page, page_size, search)
 
 
 @router.get("/{user_id}/assignments", response_model=list[dict])

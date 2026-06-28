@@ -174,7 +174,7 @@ class TestListUsers:
     async def test_owner_sees_all_users(self, owner_client: AsyncClient, seed_users):
         res = await owner_client.get("/api/v1/users")
         assert res.status_code == 200
-        emails = [u["email"] for u in res.json()]
+        emails = [u["email"] for u in res.json()["items"]]
         assert "owner@test.com" in emails
         assert "manager@test.com" in emails
         assert "worker@test.com" in emails
@@ -182,7 +182,7 @@ class TestListUsers:
     async def test_manager_sees_only_shared_project_users(self, manager_client: AsyncClient, seed_user_project):
         res = await manager_client.get("/api/v1/users")
         assert res.status_code == 200
-        emails = [u["email"] for u in res.json()]
+        emails = [u["email"] for u in res.json()["items"]]
         assert "worker@test.com" in emails
 
     async def test_site_worker_forbidden(self, worker_client: AsyncClient):

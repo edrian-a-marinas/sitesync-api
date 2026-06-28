@@ -38,6 +38,13 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class UserListResponse(BaseModel):
+    items: list[UserResponse]
+    total: int
+    page: int
+    page_size: int
+
+
 # --- User Management ---------------------------------------------------------
 class UserUpdateRequest(BaseModel):
     first_name: NameStr | None = None
