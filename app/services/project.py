@@ -93,6 +93,7 @@ async def create_project(data: ProjectCreate, current_user: User, db: AsyncSessi
     await db.commit()
     await db.refresh(project)
     await delete_pattern("projects:user:*")
+    await delete_pattern("ml:*")
     logger.info(f"PROJECT_CREATE | project_id={project.id} | owner_id={current_user.id} | status=success")
     return project
 
@@ -109,6 +110,7 @@ async def update_project(project_id: int, data: ProjectUpdate, current_user: Use
     await delete_pattern("projects:user:*")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache("dashboard:owner")
+    await delete_pattern("ml:*")
     logger.info(f"PROJECT_UPDATE | project_id={project_id} | updated_by={current_user.id} | status=success")
     return project
 
@@ -122,6 +124,7 @@ async def delete_project(project_id: int, current_user: User, db: AsyncSession) 
     await db.commit()
     await delete_pattern("projects:user:*")
     await delete_cache("dashboard:owner")
+    await delete_pattern("ml:*")
     logger.info(f"PROJECT_DELETE | project_id={project_id} | deleted_by={current_user.id} | status=success")
     return True
 
