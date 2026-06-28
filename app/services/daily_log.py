@@ -1,5 +1,6 @@
 import logging
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -8,7 +9,7 @@ from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.daily_log import DailyLogCreate, DailyLogResponse, DailyLogUpdate
+from app.schemas.daily_log import DailyLogCreate, DailyLogListResponse, DailyLogResponse, DailyLogUpdate
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ async def _to_response(log: DailyLog, db: AsyncSession) -> DailyLogResponse:
     )
 
 
-async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) -> list[DailyLogResponse]:
+async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession, page: int = 1, page_size: int = 20) -> DailyLogListResponse:
     if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
@@ -41,10 +42,14 @@ async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession) 
             )
         ).scalar_one_or_none()
         if not assigned:
-            return []
-    result = await db.execute(select(DailyLog).where(DailyLog.project_id == project_id))
+            return DailyLogListResponse(items=[], total=0, page=page, page_size=page_size)
+    total = (await db.execute(select(func.count()).select_from(DailyLog).where(DailyLog.project_id == project_id))).scalar() or 0
+    result = await db.execute(
+        select(DailyLog).where(DailyLog.project_id == project_id).order_by(DailyLog.log_date.desc()).limit(page_size).offset((page - 1) * page_size)
+    )
     logs = result.scalars().all()
-    return [await _to_response(log, db) for log in logs]
+    items = [await _to_response(log, db) for log in logs]
+    return DailyLogListResponse(items=items, total=total, page=page, page_size=page_size)
 
 
 async def get_daily_log_by_id(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> DailyLogResponse | None:
