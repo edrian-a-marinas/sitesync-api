@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -34,7 +34,14 @@ async def _to_response(log: DailyLog, db: AsyncSession) -> DailyLogResponse:
     )
 
 
-async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession, page: int = 1, page_size: int = 20) -> DailyLogListResponse:
+async def get_daily_logs(
+    project_id: int,
+    current_user: User,
+    db: AsyncSession,
+    page: int = 1,
+    page_size: int = 20,
+    search: str | None = None,
+) -> DailyLogListResponse:
     if not await _is_owner(current_user, db):
         assigned = (
             await db.execute(
@@ -43,19 +50,30 @@ async def get_daily_logs(project_id: int, current_user: User, db: AsyncSession, 
         ).scalar_one_or_none()
         if not assigned:
             return DailyLogListResponse(items=[], total=0, page=page, page_size=page_size)
-    cache_key = f"daily_logs:{project_id}:{page}:{page_size}"
+    search_term = search.strip() if search else None
+    cache_key = f"daily_logs:{project_id}:{page}:{page_size}:{search_term or ''}"
     cached = await get_cache(cache_key)
     if cached:
-        logger.info(f"DAILY_LOG | get_daily_logs | project_id={project_id} | page={page} | source=cache")
+        logger.info(f"DAILY_LOG | get_daily_logs | project_id={project_id} | page={page} | search={search_term} | source=cache")
         return DailyLogListResponse(**cached)
-    total = (await db.execute(select(func.count()).select_from(DailyLog).where(DailyLog.project_id == project_id))).scalar() or 0
-    result = await db.execute(
-        select(DailyLog).where(DailyLog.project_id == project_id).order_by(DailyLog.log_date.desc()).limit(page_size).offset((page - 1) * page_size)
-    )
+    base_query = select(DailyLog).where(DailyLog.project_id == project_id)
+    count_query = select(func.count()).select_from(DailyLog).where(DailyLog.project_id == project_id)
+    if search_term:
+        pattern = f"%{search_term}%"
+        search_filter = (
+            DailyLog.log_date.cast(String).ilike(pattern)
+            | DailyLog.weather_condition.ilike(pattern)
+            | DailyLog.work_accomplished.ilike(pattern)
+            | DailyLog.notes.ilike(pattern)
+        )
+        base_query = base_query.where(search_filter)
+        count_query = count_query.where(search_filter)
+    total = (await db.execute(count_query)).scalar() or 0
+    result = await db.execute(base_query.order_by(DailyLog.log_date.desc()).limit(page_size).offset((page - 1) * page_size))
     logs = result.scalars().all()
     items = [await _to_response(log, db) for log in logs]
     response = DailyLogListResponse(items=items, total=total, page=page, page_size=page_size)
-    logger.info(f"DAILY_LOG | get_daily_logs | project_id={project_id} | page={page} | count={len(items)} | source=db")
+    logger.info(f"DAILY_LOG | get_daily_logs | project_id={project_id} | page={page} | search={search_term} | count={len(items)} | source=db")
     await set_cache(cache_key, response.model_dump(mode="json"), ttl=3600)
     return response
 
