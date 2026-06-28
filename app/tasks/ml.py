@@ -1,8 +1,11 @@
 import asyncio
 import logging
 
+import redis
+
 from app.core.celery import celery_app
 from app.core.celery_db import make_celery_session
+from app.core.settings import settings
 from app.ml.features import (
     get_budget_overrun_features,
     get_delay_risk_features,
@@ -35,5 +38,9 @@ async def _retrain():
             logger.info("ML_RETRAIN | model=material_forecast | status=done")
 
             logger.info("ML_RETRAIN | all models retrained | status=done")
+            r = redis.from_url(settings.REDIS_CACHE_URL, decode_responses=True)
+            for key in r.scan_iter("ml:*"):
+                r.delete(key)
+            logger.info("ML_RETRAIN | cache invalidated")
         except Exception as e:
             logger.error(f"ML_RETRAIN | status=failed | reason={str(e)}")
