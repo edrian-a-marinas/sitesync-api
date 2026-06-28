@@ -198,7 +198,8 @@ class TestDailyLogList:
         pid = seed_daily_log_data["unassigned_project"].id
         res = await manager_client.get(f"/api/v1/projects/{pid}/daily-logs")
         assert res.status_code == 200
-        assert res.json() == []
+        assert res.json()["items"] == []
+        assert res.json()["total"] == 0
 
     async def test_worker_cannot_list_logs(self, worker_client: AsyncClient, seed_daily_log_data):
         pid = seed_daily_log_data["assigned_project"].id

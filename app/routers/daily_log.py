@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -6,7 +6,7 @@ from app.core.dependencies import require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.daily_log import DailyLogCreate, DailyLogResponse, DailyLogUpdate
+from app.schemas.daily_log import DailyLogCreate, DailyLogListResponse, DailyLogResponse, DailyLogUpdate
 from app.services.daily_log import (
     create_daily_log as _create_daily_log,
 )
@@ -23,15 +23,17 @@ from app.services.daily_log import (
 router = APIRouter(prefix="/projects/{project_id}/daily-logs", tags=["Daily Logs"])
 
 
-@router.get("", response_model=list[DailyLogResponse])
+@router.get("", response_model=DailyLogListResponse)
 @limiter.limit("30/minute")
 async def get_daily_logs(
     project_id: int,
     request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _get_daily_logs(project_id, current_user, db)
+    return await _get_daily_logs(project_id, current_user, db, page, page_size)
 
 
 @router.get("/{log_id}", response_model=DailyLogResponse)
