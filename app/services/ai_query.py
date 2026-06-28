@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -343,9 +344,24 @@ async def create_query(data: AIQueryRequest, current_user: User, db: AsyncSessio
 
 async def get_query(query_id: int, current_user: User, db: AsyncSession) -> AIQuery | None:
     query = (await db.execute(select(AIQuery).where(AIQuery.id == query_id).where(AIQuery.user_id == current_user.id))).scalar_one_or_none()
-    if query:
-        has_answer = query.answer is not None
-        logger.info(f"AI_QUERY | query_id={query_id} | user_id={current_user.id} | status={query.status} | has_answer={has_answer}")
+    if not query:
+        return None
+
+    # Auto-expire stale pending queries
+    if query.status == "Pending" and query.created_at:
+        age_minutes = (datetime.now(timezone.utc) - query.created_at).total_seconds() / 60
+        if age_minutes > settings.PENDING_TIMEOUT_MINUTES:
+            query.status = "Failed"
+            query.answer = "TIMEOUT"
+            await db.commit()
+            await db.refresh(query)
+            logger.warning(
+                f"AI_QUERY | GET | query_id={query_id} | user_id={current_user.id} | role={current_user.role_id} | status=auto_expired | age_minutes={age_minutes:.1f}"
+            )
+
+    logger.info(
+        f"AI_QUERY | GET | query_id={query_id} | user_id={current_user.id} | role={current_user.role_id} | status={query.status} | has_answer={query.answer is not None}"
+    )
     return query
 
 

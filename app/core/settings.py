@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     ROW_LIMIT: int = 20
 
+    PENDING_TIMEOUT_MINUTES: int = 5
+
     ML_CACHE_TTL: int = 3600
     ML_MODELS_DIR: str = "app/ml/models"
 
