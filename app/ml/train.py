@@ -17,10 +17,10 @@ def _ensure_models_dir():
 
 def train_budget_overrun(records: list[dict]) -> None:
     df = pd.DataFrame(records)
+    df = df[df["status"] == "Active"]
     if len(df) < 2:
-        logger.warning("ML_TRAIN | budget_overrun | skipped — not enough data")
+        logger.warning("ML_TRAIN | budget_overrun | skipped — not enough active projects")
         return
-
     df = df.fillna(0)
     df["spend_rate"] = df["spend_rate"].astype(float).clip(0, 2)
     df["incident_count"] = df["incident_count"].astype(float)
@@ -49,8 +49,9 @@ def train_budget_overrun(records: list[dict]) -> None:
 
 def train_delay_risk(records: list[dict]) -> None:
     df = pd.DataFrame(records)
+    df = df[df["status"] == "Active"]
     if len(df) < 2:
-        logger.warning("ML_TRAIN | delay_risk | skipped — not enough data")
+        logger.warning("ML_TRAIN | delay_risk | skipped — not enough active projects")
         return
 
     features = ["log_count", "avg_hours", "incident_rate", "typhoon_log_ratio", "days_elapsed", "days_remaining", "is_active", "structure_slipping"]
@@ -74,8 +75,9 @@ def train_delay_risk(records: list[dict]) -> None:
 
 def train_material_forecast(records: list[dict]) -> None:
     df = pd.DataFrame(records).dropna(subset=["monthly_cost"])
+    df = df[df["status"] == "Active"]
     if len(df) < 6:
-        logger.warning("ML_TRAIN | material_forecast | skipped — not enough data")
+        logger.warning("ML_TRAIN | material_forecast | skipped — not enough active project data")
         return
 
     # Add rolling average feature per project

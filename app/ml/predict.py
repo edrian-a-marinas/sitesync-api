@@ -20,7 +20,10 @@ def _load(filename: str):
 def predict_budget_overrun(records: list[dict]) -> list[dict]:
     if not records:
         return []
-    df = pd.DataFrame(records).fillna(0)
+    df = pd.DataFrame(records)
+    df = df[df["status"] == "Active"].fillna(0)
+    if df.empty:
+        return []
     df["spend_rate"] = df["spend_rate"].astype(float).clip(0, 2)
     df["incident_count"] = df["incident_count"].astype(float)
     df["typhoon_log_ratio"] = df["typhoon_log_ratio"].astype(float).clip(0, 1)
@@ -31,12 +34,12 @@ def predict_budget_overrun(records: list[dict]) -> list[dict]:
     ).clip(0, 1)
 
     results = []
-    for i, row in df.iterrows():
+    for idx, (i, row) in enumerate(df.iterrows()):
         results.append(
             {
                 "project_id": int(row["project_id"]),
                 "project_name": row["project_name"],
-                "overrun_probability": round(float(overrun_probability[i]), 3),
+                "overrun_probability": round(float(overrun_probability.iloc[idx]), 3),
                 "is_over_budget": bool(row["is_over_budget"]),
                 "total_budget": float(row["total_budget"]),
                 "total_spent": float(row["total_spent"]),
@@ -49,15 +52,17 @@ def predict_delay_risk(records: list[dict]) -> list[dict]:
     model = _load("delay_risk.joblib")
     if not model or not records:
         return []
-
     df = pd.DataFrame(records)
+    df = df[df["status"] == "Active"]
+    if df.empty:
+        return []
     features = ["log_count", "avg_hours", "incident_rate", "typhoon_log_ratio", "days_elapsed", "days_remaining", "is_active", "structure_slipping"]
     X = df[features].fillna(0).astype(float)
 
     scores = model.predict(X).clip(0, 1)
     results = []
-    for i, row in df.iterrows():
-        score = float(scores[i])
+    for idx, (i, row) in enumerate(df.iterrows()):
+        score = float(scores[idx])
         results.append(
             {
                 "project_id": int(row["project_id"]),
@@ -73,12 +78,16 @@ def predict_material_forecast(records: list[dict]) -> list[dict]:
     model = _load("material_forecast.joblib")
     if not model or not records:
         return []
-
-    df = pd.DataFrame(records).sort_values(["project_id", "year", "month"])
+    df = pd.DataFrame(records)
+    df = df[df["status"] == "Active"].sort_values(["project_id", "year", "month"])
+    if df.empty:
+        return []
     df["rolling_avg_3m"] = df.groupby("project_id")["monthly_cost"].transform(lambda x: x.shift(1).rolling(3, min_periods=1).mean()).fillna(0)
 
     # Predict next month for each project using last known row
-    last_rows = df.groupby("project_id").last().reset_index()
+    # Only forecast active projects — completed projects have no future material spend
+    active_ids = set(r["project_id"] for r in records if r.get("status", "Active") == "Active")
+    last_rows = df[df["project_id"].isin(active_ids)].groupby("project_id").last().reset_index()
 
     # Shift month forward by 1
     last_rows["month"] = (last_rows["month"] % 12) + 1
