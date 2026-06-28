@@ -13,6 +13,7 @@ async def get_budget_overrun_features(db: AsyncSession) -> list[dict]:
         SELECT
             p.id                                                        AS project_id,
             p.name                                                      AS project_name,
+            p.status                                                    AS status,
             p.total_budget,
             COALESCE(SUM(m.quantity * m.unit_cost), 0)                  AS total_spent,
             COALESCE(SUM(m.quantity * m.unit_cost), 0)
@@ -45,6 +46,7 @@ async def get_delay_risk_features(db: AsyncSession) -> list[dict]:
         SELECT
             p.id                                                        AS project_id,
             p.name                                                      AS project_name,
+            p.status                                                    AS status,
             COUNT(DISTINCT dl.id)                                       AS log_count,
             COALESCE(AVG(a.hours_worked), 0)                            AS avg_hours,
             COUNT(DISTINCT i.id) * 1.0
@@ -84,6 +86,7 @@ async def get_material_forecast_features(db: AsyncSession) -> list[dict]:
         SELECT
             p.id                                                        AS project_id,
             p.name                                                      AS project_name,
+            p.status                                                    AS status,
             EXTRACT(YEAR FROM dl.log_date)                              AS year,
             EXTRACT(MONTH FROM dl.log_date)                             AS month,
             EXTRACT(QUARTER FROM dl.log_date)                           AS quarter,
