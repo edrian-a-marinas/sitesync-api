@@ -29,7 +29,7 @@ class TestBudgetOverrun:
                 "total_spent": 1200000.0,
             }
         ]
-        with patch("app.services.ml.predict_budget_overrun", return_value=mock_result):
+        with patch("app.services.ml.predict_budget_overrun", return_value=mock_result), patch("app.services.ml.get_cache", return_value=None):
             res = await owner_client.get("/api/v1/ml/budget-overrun")
         assert res.status_code == 200
         result = res.json()["results"][0]
@@ -62,7 +62,7 @@ class TestDelayRisk:
                 "risk_level": "High",
             }
         ]
-        with patch("app.services.ml.predict_delay_risk", return_value=mock_result):
+        with patch("app.services.ml.predict_delay_risk", return_value=mock_result), patch("app.services.ml.get_cache", return_value=None):
             res = await owner_client.get("/api/v1/ml/delay-risk")
         assert res.status_code == 200
         result = res.json()["results"][0]
@@ -95,7 +95,7 @@ class TestMaterialForecast:
                 "predicted_cost": 250000.0,
             }
         ]
-        with patch("app.services.ml.predict_material_forecast", return_value=mock_result):
+        with patch("app.services.ml.predict_material_forecast", return_value=mock_result), patch("app.services.ml.get_cache", return_value=None):
             res = await owner_client.get("/api/v1/ml/material-forecast")
         assert res.status_code == 200
         result = res.json()["results"][0]
