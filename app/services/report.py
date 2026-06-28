@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import get_cache, set_cache
+from app.core.cache import delete_pattern, get_cache, set_cache
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
@@ -138,6 +138,7 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession, 
         await db.commit()
         await db.refresh(report)
         logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | status=success")
+        await delete_pattern(f"report:list:{project_id}:*")
         return report
     except Exception as e:
         logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
@@ -264,22 +265,26 @@ def cleanup_old_reports_sync(db) -> int:
     return deleted_count
 
 
-async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
-    cache_key = f"report:list:{project_id}"
+async def get_reports(project_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> dict:
+    cache_key = f"report:list:{project_id}:{page}:{page_size}"
     cached = await get_cache(cache_key)
     if cached:
-        logger.info(f"REPORT | get_reports | project_id={project_id} | source=cache")
+        logger.info(f"REPORT | get_reports | project_id={project_id} | page={page} | source=cache")
         return cached
     try:
+        total = (await db.execute(select(func.count()).select_from(Report).where(Report.project_id == project_id))).scalar() or 0
+
         result = await db.execute(
             select(Report, User.first_name, User.last_name)
             .join(User, User.id == Report.generated_by)
             .where(Report.project_id == project_id)
-            .order_by(Report.created_at.desc(), Report.week_start.desc())
+            .order_by(Report.week_start.desc())
+            .limit(page_size)
+            .offset((page - 1) * page_size)
         )
         rows = result.all()
-        logger.info(f"REPORT | get_reports | project_id={project_id} | count={len(rows)} | source=db")
-        data = [
+        logger.info(f"REPORT | get_reports | project_id={project_id} | page={page} | count={len(rows)} | source=db")
+        items = [
             {
                 "id": r.id,
                 "project_id": r.project_id,
@@ -299,8 +304,9 @@ async def get_reports(project_id: int, db: AsyncSession) -> list[dict]:
             }
             for r, first_name, last_name in rows
         ]
+        data = {"items": items, "total": total, "page": page, "page_size": page_size}
         await set_cache(cache_key, data, ttl=3600)
         return data
     except Exception as e:
         logger.error(f"REPORT | get_reports | project_id={project_id} | error={str(e)}")
-        return []
+        return {"items": [], "total": 0, "page": page, "page_size": page_size}

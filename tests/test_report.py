@@ -145,8 +145,8 @@ class TestGetReports:
         with patch("app.services.report.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await owner_client.get(report_url(d["project"].id))
         assert res.status_code == 200
-        assert len(res.json()) >= 1
-        data = res.json()[0]
+        assert len(res.json()["items"]) >= 1
+        data = res.json()["items"][0]
         assert data["project_id"] == d["project"].id
         assert "week_start" in data
         assert "week_end" in data
@@ -202,7 +202,7 @@ class TestGetReports:
                 )
         res = await owner_client.get(report_url(d["project"].id))
         assert res.status_code == 200
-        dates = [r["week_start"] for r in res.json()]
+        dates = [r["week_start"] for r in res.json()["items"]]
         assert dates == sorted(dates, reverse=True)
 
     async def test_no_reports_returns_empty_list(self, owner_client: AsyncClient, seed_users, test_session_factory):
@@ -221,7 +221,8 @@ class TestGetReports:
                 await session.flush()
         res = await owner_client.get(report_url(project.id))
         assert res.status_code == 200
-        assert res.json() == []
+        assert res.json()["items"] == []
+        assert res.json()["total"] == 0
 
     async def test_site_worker_cannot_list_reports(self, worker_client: AsyncClient, seed_report_data):
         d = seed_report_data

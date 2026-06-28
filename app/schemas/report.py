@@ -20,3 +20,10 @@ class ReportResponse(BaseModel):
     open_incident_count: int
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class ReportListResponse(BaseModel):
+    items: list[ReportResponse]
+    total: int
+    page: int
+    page_size: int

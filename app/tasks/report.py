@@ -1,9 +1,11 @@
 import logging
 
+import redis
 from sqlalchemy.future import select
 
 from app.core.celery import celery_app
 from app.core.celery_db import make_celery_sync_session
+from app.core.settings import settings
 from app.models.project import Project
 from app.services import report
 
@@ -21,12 +23,9 @@ def _generate_weekly_report(project_id: int, generated_by: int):
         try:
             result = report.generate_report_sync(project_id, generated_by, db, source="scheduled")
             if result:
-                import redis
-
-                from app.core.settings import settings
-
                 r = redis.from_url(settings.REDIS_CACHE_URL, decode_responses=True)
-                r.delete(f"report:list:{project_id}")
+                for key in r.scan_iter(f"report:list:{project_id}:*"):
+                    r.delete(key)
                 logger.info(f"REPORT | project_id={project_id} | cache=invalidated")
             logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | status=done")
         except Exception as e:

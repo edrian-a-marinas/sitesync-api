@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.report import ReportResponse
+from app.schemas.report import ReportListResponse
 from app.services.report import get_reports as _get_reports
 from app.services.report import report_exists_this_week, validate_project_exists, verify_project_access
 from app.tasks.report import generate_weekly_report
@@ -40,14 +40,16 @@ async def trigger_report(
 
 
 # ==================== Services ====================
-@router.get("/{project_id}", response_model=list[ReportResponse])
+@router.get("/{project_id}", response_model=ReportListResponse)
 @limiter.limit("30/minute")
 async def get_reports(
     project_id: int,
     request: Request,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
     if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return await _get_reports(project_id, db)
+    return await _get_reports(project_id, db, page=page, page_size=page_size)
