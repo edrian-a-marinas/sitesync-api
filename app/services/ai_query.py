@@ -140,6 +140,8 @@ async def _retrieve_materials(db: AsyncSession, project_id: int | None) -> str:
     )
     if project_id:
         stmt = stmt.where(DailyLog.project_id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     rows = (await db.execute(stmt)).all()
     if not rows:
         return "MATERIALS: No material records found.\n"
@@ -168,6 +170,8 @@ async def _retrieve_attendance(db: AsyncSession, project_id: int | None) -> str:
     )
     if project_id:
         stmt = stmt.where(DailyLog.project_id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     rows = (await db.execute(stmt)).all()
     if not rows:
         return "ATTENDANCE: No attendance records found.\n"
@@ -193,6 +197,8 @@ async def _retrieve_incidents(db: AsyncSession, project_id: int | None) -> str:
     )
     if project_id:
         stmt = stmt.where(DailyLog.project_id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     rows = (await db.execute(stmt)).all()
     if not rows:
         return "INCIDENTS: No incident records found.\n"
@@ -206,6 +212,8 @@ async def _retrieve_budget(db: AsyncSession, project_id: int | None) -> str:
     stmt = select(Project)
     if project_id:
         stmt = stmt.where(Project.id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     projects = (await db.execute(stmt)).scalars().all()
     if not projects:
         return "BUDGET: No project records found.\n"
@@ -243,6 +251,8 @@ async def _retrieve_phases(db: AsyncSession, project_id: int | None) -> str:
     )
     if project_id:
         stmt = stmt.where(ProjectPhase.project_id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     rows = (await db.execute(stmt)).all()
     if not rows:
         return "PHASES: No phase records found.\n"
@@ -256,6 +266,8 @@ async def _retrieve_general(db: AsyncSession, project_id: int | None) -> str:
     stmt = select(Project)
     if project_id:
         stmt = stmt.where(Project.id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
     projects = (await db.execute(stmt)).scalars().all()
     if not projects:
         return "PROJECTS: No projects found.\n"
@@ -368,3 +380,25 @@ async def get_query(query_id: int, current_user: User, db: AsyncSession) -> AIQu
 async def get_queries(current_user: User, db: AsyncSession, skip: int = 0, limit: int = 10) -> list[AIQuery]:
     result = await db.execute(select(AIQuery).where(AIQuery.user_id == current_user.id).order_by(AIQuery.created_at.desc()).offset(skip).limit(limit))
     return result.scalars().all()
+
+
+async def delete_query(query_id: int, current_user: User, db: AsyncSession) -> bool:
+    query = (await db.execute(select(AIQuery).where(AIQuery.id == query_id).where(AIQuery.user_id == current_user.id))).scalar_one_or_none()
+    if not query:
+        logger.warning(f"AI_QUERY | DELETE | query_id={query_id} | user_id={current_user.id} | role=owner | status=not_found")
+        return False
+    await db.delete(query)
+    await db.commit()
+    logger.info(f"AI_QUERY | DELETE | query_id={query_id} | user_id={current_user.id} | role=owner | status=deleted")
+    return True
+
+
+async def delete_all_queries(current_user: User, db: AsyncSession) -> int:
+    result = await db.execute(select(AIQuery).where(AIQuery.user_id == current_user.id))
+    queries = result.scalars().all()
+    count = len(queries)
+    for query in queries:
+        await db.delete(query)
+    await db.commit()
+    logger.info(f"AI_QUERY | DELETE_ALL | user_id={current_user.id} | role=owner | status=deleted | count={count}")
+    return count

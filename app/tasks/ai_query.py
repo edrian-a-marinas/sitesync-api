@@ -44,6 +44,7 @@ RULES:
 3. If data is insufficient, say so briefly.
 4. Never make up data not present in the context.
 5. Keep answers short — 2-3 sentences max unless a breakdown is needed.
+6. Format all currency values as Philippine peso with comma separators, e.g. ₱1,234,567.89.
 PROJECT DATA:
 {context}
 QUESTION: {query.question}"""
