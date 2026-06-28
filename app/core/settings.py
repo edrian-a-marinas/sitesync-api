@@ -36,6 +36,9 @@ class Settings(BaseSettings):
 
     ROW_LIMIT: int = 20
 
+    ML_CACHE_TTL: int = 3600
+    ML_MODELS_DIR: str = "app/ml/models"
+
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
     def SYNC_DATABASE_URL(self) -> str:
