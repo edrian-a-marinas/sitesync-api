@@ -7,6 +7,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import delete_cache, get_cache, set_cache
 from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment, WorkerAssignment
@@ -105,13 +106,14 @@ async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, curr
     await db.commit()
     await db.refresh(photo)
 
+    await delete_cache(f"site_photos:{log_id}")
     logger.info(f"SITE_PHOTO | log_id={log_id} | photo_id={photo.id} | uploaded_by={current_user.id} | role={role_name} | status=success")
     return _build_response(photo)
 
 
 async def get_site_photos(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> list[dict]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
-
+    role_name = role.name if role else None
     if role and role.name == "site_worker":
         assigned = (
             await db.execute(
@@ -120,13 +122,20 @@ async def get_site_photos(project_id: int, log_id: int, current_user: User, db: 
         ).scalar_one_or_none()
         if not assigned:
             logger.warning(
-                f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role.name if role else None} | status=failed | reason=worker not assigned to project"
+                f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role_name} | status=failed | reason=worker not assigned to project"
             )
             return []
+    cache_key = f"site_photos:{log_id}"
+    cached = await get_cache(cache_key)
+    if cached is not None:
+        logger.info(f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role_name} | source=cache | count={len(cached)}")
+        return cached
     result = await db.execute(select(SitePhoto).where(SitePhoto.daily_log_id == log_id))
     photos = result.scalars().all()
-    logger.info(f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role.name if role else None} | count={len(photos)}")
-    return [_build_response(p) for p in photos]
+    response = [_build_response(p) for p in photos]
+    await set_cache(cache_key, response, ttl=3600)
+    logger.info(f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role_name} | source=db | count={len(photos)}")
+    return response
 
 
 async def delete_site_photo(project_id: int, log_id: int, photo_id: int, current_user: User, db: AsyncSession) -> bool | None:
@@ -146,5 +155,6 @@ async def delete_site_photo(project_id: int, log_id: int, photo_id: int, current
     await db.delete(photo)
     await db.commit()
 
+    await delete_cache(f"site_photos:{log_id}")
     logger.info(f"SITE_PHOTO_DELETE | photo_id={photo_id} | log_id={log_id} | user_id={current_user.id} | role={role_name} | status=success")
     return True
