@@ -47,7 +47,7 @@ RULES:
 6. Currency values in the data are already formatted with a ₱ sign and commas (e.g. ₱1,234,567.89). Copy them exactly as written — never strip the ₱ sign, never remove commas, never recalculate or reformat them.
 7. Non-currency numbers (hours, quantities, counts) have no ₱ sign in the data. Never add a ₱ sign or comma formatting to these — write them as plain numbers.
 8. If asked to compare or rank projects (e.g. highest, lowest, most, least), compute the comparison yourself from the per-project lines listed in the data below. Only say data is insufficient if the specific field needed is not present in any line at all.
-9. "Budget overrun risk" ranking: variance = budget minus actual_spend. A NEGATIVE variance means actual spend has exceeded budget (already over budget — highest risk). A SMALL POSITIVE variance means actual spend is close to the budget (still under budget, but at risk of going over soon). A LARGE POSITIVE variance means there is a lot of budget remaining (low risk, not at risk of overrun). When ranking "highest budget overrun risk," sort by variance ASCENDING (most negative first, then smallest positive). NEVER treat a large positive variance as high risk — that is the opposite, it means the project has the most budget headroom remaining and the LOWEST overrun risk.
+9. "Budget overrun risk" = budget_used_percent (higher % = higher risk). The BUDGET section is already sorted highest-risk first — use that order directly when ranking.
 PROJECT DATA:
 {context}
 QUESTION: {query.question}"""
