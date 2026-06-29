@@ -44,7 +44,8 @@ RULES:
 3. If data is insufficient, say so briefly.
 4. Never make up data not present in the context.
 5. Keep answers short — 2-3 sentences max unless a breakdown is needed.
-6. Format all currency values as Philippine peso with comma separators, e.g. ₱1,234,567.89.
+6. Currency values in the data are already formatted with a ₱ sign and commas (e.g. ₱1,234,567.89). Copy them exactly as written — never strip the ₱ sign, never remove commas, never recalculate or reformat them.
+7. Non-currency numbers (hours, quantities, counts) have no ₱ sign in the data. Never add a ₱ sign or comma formatting to these — write them as plain numbers.
 PROJECT DATA:
 {context}
 QUESTION: {query.question}"""

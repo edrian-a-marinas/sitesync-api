@@ -18,8 +18,12 @@ from app.schemas.ai_query import AIQueryRequest
 logger = logging.getLogger(__name__)
 
 
-# ==================== RAG ====================
+def _format_currency(value: float) -> str:
+    sign = "-" if value < 0 else ""
+    return f"{sign}\u20b1{abs(value):,.2f}"
 
+
+# ==================== RAG ====================
 _ROW_LIMIT = settings.ROW_LIMIT
 
 _INTENT_KEYWORDS: dict[str, list[str]] = {
@@ -149,7 +153,7 @@ async def _retrieve_materials(db: AsyncSession, project_id: int | None) -> str:
     for r in rows:
         lines.append(
             f"  [{r.log_date}] {r.project_name} | {r.material_name} | "
-            f"qty={float(r.quantity)} {r.unit} | unit_cost={float(r.unit_cost)} | total_cost={float(r.total_cost)}"
+            f"qty={float(r.quantity)} {r.unit} | unit_cost={_format_currency(float(r.unit_cost))} | total_cost={_format_currency(float(r.total_cost))}"
         )
     return "\n".join(lines) + "\n"
 
@@ -233,7 +237,8 @@ async def _retrieve_budget(db: AsyncSession, project_id: int | None) -> str:
         variance = budget - actual_spend
         over_under = "OVER BUDGET" if variance < 0 else "under budget"
         lines.append(
-            f"  {project.name} | budget={budget} | actual_spend={actual_spend} | variance={variance} | {over_under} | status={project.status}"
+            f"  {project.name} | budget={_format_currency(budget)} | actual_spend={_format_currency(actual_spend)} | "
+            f"variance={_format_currency(variance)} | {over_under} | status={project.status}"
         )
     return "\n".join(lines) + "\n"
 
@@ -258,7 +263,9 @@ async def _retrieve_phases(db: AsyncSession, project_id: int | None) -> str:
         return "PHASES: No phase records found.\n"
     lines = ["PHASES:"]
     for r in rows:
-        lines.append(f"  {r.project_name} | phase={r.phase_name} | allocated_budget={float(r.allocated_budget)} | status={r.status}")
+        lines.append(
+            f"  {r.project_name} | phase={r.phase_name} | allocated_budget={_format_currency(float(r.allocated_budget))} | status={r.status}"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -307,9 +314,9 @@ async def _retrieve_general(db: AsyncSession, project_id: int | None) -> str:
             )
         ).scalar() or 0
         lines.append(
-            f"  {project.name} | location={project.location} | budget={float(project.total_budget)} | "
+            f"  {project.name} | location={project.location} | budget={_format_currency(float(project.total_budget))} | "
             f"status={project.status} | start={project.start_date} | target_end={project.target_end_date} | "
-            f"total_material_cost={total_material_cost} | total_hours_worked={total_hours} | "
+            f"total_material_cost={_format_currency(total_material_cost)} | total_hours_worked={total_hours} | "
             f"total_incidents={incident_count} | open_incidents={open_incidents}"
         )
     return "\n".join(lines) + "\n"
