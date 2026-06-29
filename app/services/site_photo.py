@@ -61,7 +61,7 @@ def _build_response(photo: SitePhoto) -> dict:
         "filename": photo.filename,
         "content_type": photo.content_type,
         "s3_key": photo.s3_key,
-        "uploaded_at": photo.uploaded_at,
+        "uploaded_at": photo.uploaded_at.isoformat() if photo.uploaded_at else None,
         "file_url": generate_presigned_url(photo.s3_key),
     }
 
