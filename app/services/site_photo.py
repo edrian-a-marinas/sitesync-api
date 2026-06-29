@@ -3,9 +3,11 @@ import uuid
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -15,8 +17,9 @@ from app.services.s3 import generate_presigned_url, upload_file
 
 logger = logging.getLogger(__name__)
 
-ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
+# PDF included for PMs can also upload supporting documentation such Material delivery receipts, etc.
+ALLOWED_CONTENT_TYPES = settings.ALLOWED_CONTENT_TYPES
+MAX_FILE_SIZE_BYTES = settings.MAX_FILE_SIZE_BYTES  # 10MB
 
 
 async def _check_manager_assigned(project_id: int, current_user: User, db: AsyncSession) -> tuple[bool, str | None]:
@@ -70,6 +73,14 @@ async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, curr
     if not log:
         logger.warning(f"SITE_PHOTO | log_id={log_id} | project_id={project_id} | role={role_name} | status=failed | reason=log not found")
         return None
+
+    # Enforce max 10 attachments per daily log
+    photo_count = (await db.execute(select(func.count(SitePhoto.id)).where(SitePhoto.daily_log_id == log_id))).scalar() or 0
+    if photo_count >= 10:
+        logger.warning(
+            f"SITE_PHOTO | log_id={log_id} | uploaded_by={current_user.id} | role={role_name} | status=failed | reason=max 10 photos per log reached"
+        )
+        raise ValueError("Maximum of 10 attachments per daily log reached.")
     try:
         contents = await _validate_file(file)
     except ValueError as e:
