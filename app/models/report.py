@@ -1,4 +1,4 @@
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint, text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -10,7 +10,7 @@ class Report(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
-    generated_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    generated_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     week_start: Mapped[Date] = mapped_column(Date, nullable=False)
     week_end: Mapped[Date] = mapped_column(Date, nullable=False)
     s3_key: Mapped[str] = mapped_column(String, nullable=False)
@@ -23,6 +23,4 @@ class Report(Base):
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     project: Mapped["Project"] = relationship("Project", back_populates="reports")
-    generated_by_user: Mapped["User"] = relationship("User", back_populates="reports")
-
-    __table_args__ = (UniqueConstraint("project_id", "week_start", name="uq_report_project_week"),)
+    generated_by_user: Mapped["User | None"] = relationship("User", back_populates="reports")
