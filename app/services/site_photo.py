@@ -13,7 +13,7 @@ from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.site_photo import SitePhoto
 from app.models.user import User
-from app.services.s3 import generate_presigned_url, upload_file
+from app.services.s3 import delete_file, generate_presigned_url, upload_file
 
 logger = logging.getLogger(__name__)
 
@@ -127,3 +127,24 @@ async def get_site_photos(project_id: int, log_id: int, current_user: User, db: 
     photos = result.scalars().all()
     logger.info(f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role.name if role else None} | count={len(photos)}")
     return [_build_response(p) for p in photos]
+
+
+async def delete_site_photo(project_id: int, log_id: int, photo_id: int, current_user: User, db: AsyncSession) -> bool | None:
+    is_assigned, role_name = await _check_manager_assigned(project_id, current_user, db)
+    if not is_assigned:
+        return False
+
+    photo = (await db.execute(select(SitePhoto).where(SitePhoto.id == photo_id).where(SitePhoto.daily_log_id == log_id))).scalar_one_or_none()
+
+    if not photo:
+        logger.warning(
+            f"SITE_PHOTO_DELETE | photo_id={photo_id} | log_id={log_id} | user_id={current_user.id} | role={role_name} | status=failed | reason=photo not found"
+        )
+        return None
+
+    delete_file(photo.s3_key)
+    await db.delete(photo)
+    await db.commit()
+
+    logger.info(f"SITE_PHOTO_DELETE | photo_id={photo_id} | log_id={log_id} | user_id={current_user.id} | role={role_name} | status=success")
+    return True
