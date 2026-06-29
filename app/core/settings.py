@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     ML_CACHE_TTL: int = 3600
     ML_MODELS_DIR: str = "app/ml/models"
 
+    ALLOWED_CONTENT_TYPES: set[str] = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+    MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10MB
+
     # Sync URL for Alembic migrations (asyncpg not supported by Alembic)
     @property
     def SYNC_DATABASE_URL(self) -> str:
