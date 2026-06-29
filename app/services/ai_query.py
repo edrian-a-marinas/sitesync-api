@@ -340,7 +340,7 @@ async def _retrieve_personnel(db: AsyncSession, project_id: int | None) -> str:
     manager_rows = (await db.execute(manager_stmt)).all()
     worker_rows = (await db.execute(worker_stmt)).all()
     if not manager_rows and not worker_rows:
-        return "PERSONNEL: No manager or worker assignments found.\n"
+        return "PERSONNEL: None assigned\n"
     managers_by_project: dict[str, list[str]] = {}
     for r in manager_rows:
         managers_by_project.setdefault(r.project_name, []).append(f"{r.first_name} {r.last_name}")
