@@ -7,7 +7,8 @@ from kombu.exceptions import OperationalError
 from sqlalchemy import delete, select
 
 from app.models.ai_query import AIQuery
-from app.models.project import Project
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
+from app.services.ai_query import _format_currency, _retrieve_budget, _retrieve_personnel, classify_intent
 
 
 # ---------------------------------------------------------------------------
@@ -392,3 +393,118 @@ class TestDeleteAllAIQueries:
     async def test_unauthenticated_cannot_delete_all_queries(self, unauth_client: AsyncClient):
         res = await unauth_client.delete(AI_QUERIES_URL)
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# classify_intent (keyword matching, word-boundary safety for short keywords)
+# ---------------------------------------------------------------------------
+class TestClassifyIntent:
+    def test_short_keyword_matches_as_whole_word(self):
+        intents = classify_intent("who is the pm?")
+        assert "personnel" in intents
+
+    def test_full_phrase_matches(self):
+        intents = classify_intent("who is the project manager for this site?")
+        assert "personnel" in intents
+
+    def test_short_keyword_does_not_match_inside_another_word(self):
+        intents = classify_intent("what equipment do we have?")
+        assert "personnel" not in intents
+        assert "equipment" in intents
+
+    def test_equipment_keyword_matches(self):
+        intents = classify_intent("any broken machinery on site?")
+        assert "equipment" in intents
+
+    def test_general_always_included(self):
+        intents = classify_intent("hello")
+        assert "general" in intents
+
+    def test_multiple_intents_can_match(self):
+        intents = classify_intent("how much did we spend on materials and who manages this project?")
+        assert "materials" in intents
+        assert "personnel" in intents
+
+
+# ---------------------------------------------------------------------------
+# _format_currency (peso formatting helper)
+# ---------------------------------------------------------------------------
+class TestFormatCurrency:
+    def test_formats_with_peso_sign_and_commas(self):
+        assert _format_currency(1234567.8) == "\u20b11,234,567.80"
+
+    def test_always_shows_two_decimals(self):
+        assert _format_currency(5000) == "\u20b15,000.00"
+
+    def test_formats_zero(self):
+        assert _format_currency(0) == "\u20b10.00"
+
+    def test_formats_negative_with_leading_minus(self):
+        assert _format_currency(-2500.5) == "-\u20b12,500.50"
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_personnel (RAG: project managers + worker counts)
+# ---------------------------------------------------------------------------
+class TestRetrievePersonnel:
+    async def test_returns_assigned_manager_name(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                session.add(ProjectAssignment(project_id=project.id, user_id=seed_users["manager"].id))
+                await session.flush()
+        async with test_session_factory() as session:
+            context = await _retrieve_personnel(session, project_id=project.id)
+        assert seed_users["manager"].first_name in context
+        assert seed_users["manager"].last_name in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(ProjectAssignment).where(
+                        ProjectAssignment.project_id == project.id,
+                        ProjectAssignment.user_id == seed_users["manager"].id,
+                    )
+                )
+
+    async def test_includes_worker_count(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                session.add(WorkerAssignment(project_id=project.id, user_id=seed_users["worker"].id))
+                await session.flush()
+        async with test_session_factory() as session:
+            context = await _retrieve_personnel(session, project_id=project.id)
+        assert "worker_count=1" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    delete(WorkerAssignment).where(
+                        WorkerAssignment.project_id == project.id,
+                        WorkerAssignment.user_id == seed_users["worker"].id,
+                    )
+                )
+
+    async def test_no_assignment_shows_none_assigned(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_personnel(session, project_id=project.id)
+        assert "None assigned" in context
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_budget (currency formatting + overrun risk sorting)
+# ---------------------------------------------------------------------------
+class TestRetrieveBudget:
+    async def test_includes_budget_used_percent_and_currency_format(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_budget(session, project_id=project.id)
+        assert "budget_used_percent=0.0%" in context
+        assert "\u20b1" in context
+        assert "under budget" in context
+
+    async def test_header_indicates_sorted_by_risk(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_budget(session, project_id=project.id)
+        assert "sorted by overrun risk" in context
