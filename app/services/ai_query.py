@@ -249,7 +249,7 @@ async def _retrieve_budget(db: AsyncSession, project_id: int | None) -> str:
     projects = (await db.execute(stmt)).scalars().all()
     if not projects:
         return "BUDGET: No project records found.\n"
-    lines = ["BUDGET (budget vs actual material spend):"]
+    rows = []
     for project in projects:
         actual_spend = float(
             (
@@ -264,9 +264,15 @@ async def _retrieve_budget(db: AsyncSession, project_id: int | None) -> str:
         budget = float(project.total_budget)
         variance = budget - actual_spend
         over_under = "OVER BUDGET" if variance < 0 else "under budget"
+        budget_used_percent = (actual_spend / budget * 100) if budget > 0 else 0.0
+        rows.append((budget_used_percent, project, budget, actual_spend, variance, over_under))
+    # Sort by budget_used_percent descending — highest % used = highest overrun risk, listed first
+    rows.sort(key=lambda r: r[0], reverse=True)
+    lines = ["BUDGET (sorted by overrun risk, highest first):"]
+    for budget_used_percent, project, budget, actual_spend, variance, over_under in rows:
         lines.append(
             f"  {project.name} | budget={_format_currency(budget)} | actual_spend={_format_currency(actual_spend)} | "
-            f"variance={_format_currency(variance)} | {over_under} | status={project.status}"
+            f"variance={_format_currency(variance)} | budget_used_percent={budget_used_percent:.1f}% | {over_under} | status={project.status}"
         )
     return "\n".join(lines) + "\n"
 
