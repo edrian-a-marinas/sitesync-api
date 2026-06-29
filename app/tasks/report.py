@@ -24,11 +24,10 @@ def _generate_weekly_report(project_id: int, generated_by: int | None, source: s
             result = report.generate_report_sync(project_id, generated_by, db, source=source)
             if result:
                 r = redis.from_url(settings.REDIS_CACHE_URL, decode_responses=True)
-                for key in r.scan_iter(f"report:list:{project_id}:*"):
-                    r.delete(key)
-                for key in r.scan_iter(f"report:exists:{project_id}:*"):
-                    r.delete(key)
-                logger.info(f"REPORT | project_id={project_id} | cache=invalidated")
+                keys = r.keys(f"report:list:{project_id}:*") + r.keys(f"report:exists:{project_id}:*")
+                if keys:
+                    r.delete(*keys)
+                logger.info(f"REPORT | project_id={project_id} | cache=invalidated | keys={len(keys)}")
             logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | status=done")
         except Exception as e:
             logger.error(f"REPORT | project_id={project_id} | user_id={generated_by} | status=failed | reason={str(e)}")
