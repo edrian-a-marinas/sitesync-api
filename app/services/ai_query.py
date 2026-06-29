@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func
@@ -145,7 +146,15 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
 
 def classify_intent(question: str) -> list[str]:
     lowered = question.lower()
-    matched = [intent for intent, keywords in _INTENT_KEYWORDS.items() if any(kw in lowered for kw in keywords)]
+
+    def _matches(keyword: str) -> bool:
+        if len(keyword) <= 3:
+            # Short keywords (e.g. "pm") must match as a whole word to avoid
+            # false positives like "pm" inside "equipment"
+            return re.search(rf"\b{re.escape(keyword)}\b", lowered) is not None
+        return keyword in lowered
+
+    matched = [intent for intent, keywords in _INTENT_KEYWORDS.items() if any(_matches(kw) for kw in keywords)]
     if not matched:
         matched.append("general")
     else:
