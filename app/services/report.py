@@ -38,12 +38,16 @@ async def validate_project_exists(project_id: int, db: AsyncSession) -> bool:
     return project is not None
 
 
-async def report_exists_this_week(project_id: int, db: AsyncSession) -> bool:
-    week_start = date.today() - timedelta(days=7)
-    cache_key = f"report:exists:{project_id}:{week_start}"
+async def report_exists_today(project_id: int, user_id: int, db: AsyncSession) -> bool:
+    today = date.today()
+    cache_key = f"report:exists:{project_id}:{user_id}:{today}"
     if await get_cache(cache_key):
         return True
-    existing = (await db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start))).scalar_one_or_none()
+    existing = (
+        await db.execute(
+            select(Report).where(Report.project_id == project_id).where(Report.generated_by == user_id).where(func.date(Report.created_at) == today)
+        )
+    ).scalar_one_or_none()
     if existing:
         await set_cache(cache_key, True, ttl=86400)
         return True
@@ -139,23 +143,20 @@ async def generate_report(project_id: int, generated_by: int, db: AsyncSession, 
         await db.refresh(report)
         logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | status=success")
         await delete_pattern(f"report:list:{project_id}:*")
+        await delete_pattern(f"report:exists:{project_id}:*")
         return report
     except Exception as e:
         logger.error(f"REPORT | project_id={project_id} | status=failed | reason={str(e)}")
         return None
 
 
-def generate_report_sync(project_id: int, generated_by: int, db, source: str = "manual") -> Report | None:
+def generate_report_sync(project_id: int, generated_by: int | None, db, source: str = "manual") -> Report | None:
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
     project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
     if not project:
         logger.error(f"REPORT | project_id={project_id} | status=failed | reason=project not found")
         return None
-    existing = db.execute(select(Report).where(Report.project_id == project_id).where(Report.week_start == week_start)).scalar_one_or_none()
-    if existing:
-        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | status=skipped | reason=already exists")
-        return existing
     try:
         total_hours = (
             db.execute(
@@ -215,7 +216,7 @@ def generate_report_sync(project_id: int, generated_by: int, db, source: str = "
 
         report = Report(
             project_id=project_id,
-            generated_by=generated_by,
+            generated_by=generated_by,  # None for scheduled/auto
             week_start=week_start,
             week_end=week_end,
             s3_key=filename,
@@ -229,7 +230,7 @@ def generate_report_sync(project_id: int, generated_by: int, db, source: str = "
         db.add(report)
         db.commit()
         db.refresh(report)
-        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | status=success")
+        logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | generated_by={generated_by} | status=success")
         return report
     except Exception as e:
         if "uq_report_project_week" in str(e):
@@ -265,19 +266,29 @@ def cleanup_old_reports_sync(db) -> int:
     return deleted_count
 
 
-async def get_reports(project_id: int, db: AsyncSession, page: int = 1, page_size: int = 20) -> dict:
-    cache_key = f"report:list:{project_id}:{page}:{page_size}"
+async def get_reports(project_id: int, db: AsyncSession, page: int = 1, page_size: int = 20, current_user: User | None = None) -> dict:
+    role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none() if current_user else None
+    is_owner = role.name == "owner" if role else True
+    current_user_id = current_user.id if current_user else None
+    cache_key = f"report:list:{project_id}:{current_user_id}:{page}:{page_size}"
     cached = await get_cache(cache_key)
     if cached:
         logger.info(f"REPORT | get_reports | project_id={project_id} | page={page} | source=cache")
         return cached
     try:
-        total = (await db.execute(select(func.count()).select_from(Report).where(Report.project_id == project_id))).scalar() or 0
+        # Base filter: owner sees all, PM sees own + scheduled
+        if is_owner:
+            base_filter = Report.project_id == project_id
+        else:
+            base_filter = (Report.project_id == project_id) & (
+                (Report.generated_by == current_user_id) | (Report.generated_by == None)  # scheduled/auto  # noqa: E711
+            )
 
+        total = (await db.execute(select(func.count()).select_from(Report).where(base_filter))).scalar() or 0
         result = await db.execute(
             select(Report, User.first_name, User.last_name)
-            .join(User, User.id == Report.generated_by)
-            .where(Report.project_id == project_id)
+            .outerjoin(User, User.id == Report.generated_by)
+            .where(base_filter)
             .order_by(Report.week_start.desc())
             .limit(page_size)
             .offset((page - 1) * page_size)
@@ -289,7 +300,7 @@ async def get_reports(project_id: int, db: AsyncSession, page: int = 1, page_siz
                 "id": r.id,
                 "project_id": r.project_id,
                 "generated_by": r.generated_by,
-                "generated_by_name": f"{first_name} {last_name}",
+                "generated_by_name": f"{first_name} {last_name}" if first_name else None,
                 "week_start": str(r.week_start),
                 "week_end": str(r.week_end),
                 "s3_key": r.s3_key,

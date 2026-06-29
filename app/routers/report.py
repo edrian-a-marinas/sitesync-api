@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.user import User
 from app.schemas.report import ReportListResponse
 from app.services.report import get_reports as _get_reports
-from app.services.report import report_exists_this_week, validate_project_exists, verify_project_access
+from app.services.report import report_exists_today, validate_project_exists, verify_project_access
 from app.tasks.report import generate_weekly_report
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
@@ -27,14 +27,14 @@ async def trigger_report(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    if await report_exists_this_week(project_id, db):
-        return {"status": "exists", "detail": "Report already exists for this week"}
+    if await report_exists_today(project_id, current_user.id, db):
+        return {"status": "exists", "detail": "You have already generated a report today"}
     if not generate_weekly_report.app.control.ping(timeout=1.0):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Report generation service is currently unavailable. Please try again later.",
         )
-    generate_weekly_report.delay(project_id, current_user.id)
+    generate_weekly_report.delay(project_id, current_user.id, "manual")
     response.status_code = status.HTTP_202_ACCEPTED
     return {"status": "queued", "detail": "Report generation started"}
 
@@ -52,4 +52,4 @@ async def get_reports(
 ):
     if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    return await _get_reports(project_id, db, page=page, page_size=page_size)
+    return await _get_reports(project_id, db, page=page, page_size=page_size, current_user=current_user)

@@ -6,7 +6,7 @@ from pydantic import BaseModel
 class ReportResponse(BaseModel):
     id: int
     project_id: int
-    generated_by: int
+    generated_by: int | None = None
     generated_by_name: str | None = None
     week_start: date
     week_end: date

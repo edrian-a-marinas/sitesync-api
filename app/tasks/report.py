@@ -13,18 +13,20 @@ logger = logging.getLogger(__name__)
 
 
 @celery_app.task(name="generate_weekly_report")
-def generate_weekly_report(project_id: int, generated_by: int):
-    logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | task=queued")
-    _generate_weekly_report(project_id, generated_by)
+def generate_weekly_report(project_id: int, generated_by: int | None, source: str = "scheduled"):
+    logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | source={source} | task=queued")
+    _generate_weekly_report(project_id, generated_by, source)
 
 
-def _generate_weekly_report(project_id: int, generated_by: int):
+def _generate_weekly_report(project_id: int, generated_by: int | None, source: str = "scheduled"):
     with make_celery_sync_session()() as db:
         try:
-            result = report.generate_report_sync(project_id, generated_by, db, source="scheduled")
+            result = report.generate_report_sync(project_id, generated_by, db, source=source)
             if result:
                 r = redis.from_url(settings.REDIS_CACHE_URL, decode_responses=True)
                 for key in r.scan_iter(f"report:list:{project_id}:*"):
+                    r.delete(key)
+                for key in r.scan_iter(f"report:exists:{project_id}:*"):
                     r.delete(key)
                 logger.info(f"REPORT | project_id={project_id} | cache=invalidated")
             logger.info(f"REPORT | project_id={project_id} | user_id={generated_by} | status=done")
@@ -57,6 +59,6 @@ def _trigger_all_weekly_reports():
         projects = db.execute(select(Project).where(Project.status == "Active")).scalars().all()
         count = len(projects)
         for project in projects:
-            generate_weekly_report.delay(project.id, project.owner_id)
+            generate_weekly_report.delay(project.id, None)
             logger.info(f"REPORT_TRIGGER | project_id={project.id} | status=queued")
         logger.info(f"REPORT_TRIGGER | total_queued={count} | status=done")
