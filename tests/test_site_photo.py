@@ -234,3 +234,78 @@ class TestUploadSitePhoto:
         assert list_res.status_code == 200
         filenames = [p["filename"] for p in list_res.json()]
         assert any(f.endswith(".png") for f in filenames)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /site-photos/{photo_id}
+# ---------------------------------------------------------------------------
+class TestDeleteSitePhoto:
+    async def _upload_photo(self, client: AsyncClient, project_id: int, log_id: int) -> int:
+        with patch("app.services.site_photo.upload_file", return_value="site_photos/1/photo.png"):
+            with patch("app.services.site_photo.generate_presigned_url", return_value="https://fake-url.com/photo.png"):
+                res = await client.post(
+                    site_photo_url(project_id, log_id),
+                    files=_upload_files(),
+                )
+        assert res.status_code == 201
+        return res.json()["id"]
+
+    async def test_owner_can_delete_photo(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        with patch("app.services.site_photo.delete_file"):
+            res = await owner_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        assert res.status_code == 204
+
+    async def test_assigned_manager_can_delete_photo(self, manager_client: AsyncClient, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        with patch("app.services.site_photo.delete_file"):
+            res = await manager_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        assert res.status_code == 204
+
+    async def test_unassigned_manager_cannot_delete_photo(
+        self, manager_client: AsyncClient, owner_client: AsyncClient, seed_users, test_session_factory
+    ):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        with patch("app.services.site_photo.delete_file"):
+            res = await manager_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        assert res.status_code == 403
+
+    async def test_worker_cannot_delete_photo(self, worker_client: AsyncClient, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        with patch("app.services.site_photo.delete_file"):
+            res = await worker_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_delete(self, unauth_client: AsyncClient, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        res = await unauth_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        assert res.status_code == 401
+
+    async def test_delete_nonexistent_photo_returns_404(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        with patch("app.services.site_photo.delete_file"):
+            res = await owner_client.delete(f"{site_photo_url(project.id, log.id)}/99999")
+        assert res.status_code == 404
+
+    async def test_deleted_photo_no_longer_in_list(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        photo_id = await self._upload_photo(owner_client, project.id, log.id)
+        with patch("app.services.site_photo.delete_file"):
+            await owner_client.delete(f"{site_photo_url(project.id, log.id)}/{photo_id}")
+        with patch("app.services.site_photo.generate_presigned_url", return_value="https://fake-url.com/photo.png"):
+            list_res = await owner_client.get(site_photo_url(project.id, log.id))
+        assert list_res.status_code == 200
+        assert all(p["id"] != photo_id for p in list_res.json())
