@@ -71,7 +71,7 @@ class TestTriggerReport:
             mock_task.delay.return_value = None
             res = await owner_client.post(generate_url(d["project"].id))
         assert res.status_code == 202
-        mock_task.delay.assert_called_once_with(d["project"].id, seed_users["owner"].id)
+        mock_task.delay.assert_called_once_with(d["project"].id, seed_users["owner"].id, "manual")
 
     async def test_assigned_manager_can_trigger_report(self, manager_client: AsyncClient, seed_report_data):
         d = seed_report_data
@@ -110,6 +110,8 @@ class TestTriggerReport:
                 session.add(project)
                 await session.flush()
                 week_start = date.today() - timedelta(days=7)
+                from datetime import datetime, timezone
+
                 session.add(
                     Report(
                         project_id=project.id,
@@ -117,6 +119,7 @@ class TestTriggerReport:
                         week_start=week_start,
                         week_end=date.today(),
                         s3_key=f"reports/report_{project.id}_{week_start}.txt",
+                        created_at=datetime.now(timezone.utc),
                     )
                 )
         res = await owner_client.post(generate_url(project.id))
@@ -158,20 +161,21 @@ class TestGetReports:
         d = seed_report_data
         async with test_session_factory() as session:
             async with session.begin():
+                # PM can only see own reports + scheduled
                 session.add(
                     Report(
                         project_id=d["assigned_project"].id,
-                        generated_by=seed_users["owner"].id,
+                        generated_by=seed_users["manager"].id,
                         week_start=date(2026, 2, 1),
                         week_end=date(2026, 2, 7),
                         s3_key=f"reports/report_{d['assigned_project'].id}_2026-02-01.txt",
                     )
                 )
-        await delete_cache(f"report:list:{d['assigned_project'].id}")
+        await delete_cache(f"report:list:{d['assigned_project'].id}:{seed_users['manager'].id}:1:20")
         with patch("app.services.report.generate_presigned_url", return_value="https://fake-s3-url.com/report.pdf"):
             res = await manager_client.get(report_url(d["assigned_project"].id))
         assert res.status_code == 200
-        assert len(res.json()) >= 1
+        assert len(res.json()["items"]) >= 1
 
     async def test_unassigned_manager_cannot_list_reports(self, manager_client: AsyncClient, seed_report_data):
         d = seed_report_data
