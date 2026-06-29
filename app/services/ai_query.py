@@ -9,9 +9,10 @@ from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
+from app.models.equipment import Equipment
 from app.models.incident import Incident
 from app.models.material import Material
-from app.models.project import Project, ProjectPhase
+from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest
 
@@ -111,6 +112,33 @@ _INTENT_KEYWORDS: dict[str, list[str]] = {
         "completed",
         "not started",
         "in progress",
+    ],
+    "personnel": [
+        "pm",
+        "project manager",
+        "project managers",
+        "manager",
+        "managers",
+        "supervisor",
+        "supervisors",
+        "in charge",
+        "assigned",
+        "who is managing",
+        "who manages",
+    ],
+    "equipment": [
+        "equipment",
+        "machine",
+        "machines",
+        "machinery",
+        "tool",
+        "tools",
+        "excavator",
+        "crane",
+        "broken",
+        "needs repair",
+        "condition",
+        "maintenance",
     ],
 }
 
@@ -269,6 +297,75 @@ async def _retrieve_phases(db: AsyncSession, project_id: int | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+async def _retrieve_personnel(db: AsyncSession, project_id: int | None) -> str:
+    manager_stmt = (
+        select(
+            Project.name.label("project_name"),
+            User.first_name,
+            User.last_name,
+        )
+        .join(ProjectAssignment, ProjectAssignment.project_id == Project.id)
+        .join(User, User.id == ProjectAssignment.user_id)
+        .order_by(Project.name)
+    )
+    worker_stmt = (
+        select(
+            Project.name.label("project_name"),
+            func.count(WorkerAssignment.user_id).label("worker_count"),
+        )
+        .join(WorkerAssignment, WorkerAssignment.project_id == Project.id)
+        .group_by(Project.name)
+    )
+    if project_id:
+        manager_stmt = manager_stmt.where(Project.id == project_id)
+        worker_stmt = worker_stmt.where(Project.id == project_id)
+    else:
+        manager_stmt = manager_stmt.where(Project.status == "Active")
+        worker_stmt = worker_stmt.where(Project.status == "Active")
+    manager_rows = (await db.execute(manager_stmt)).all()
+    worker_rows = (await db.execute(worker_stmt)).all()
+    if not manager_rows and not worker_rows:
+        return "PERSONNEL: No manager or worker assignments found.\n"
+    managers_by_project: dict[str, list[str]] = {}
+    for r in manager_rows:
+        managers_by_project.setdefault(r.project_name, []).append(f"{r.first_name} {r.last_name}")
+    workers_by_project = {r.project_name: r.worker_count for r in worker_rows}
+    project_names = sorted(set(managers_by_project) | set(workers_by_project))
+    lines = ["PERSONNEL (assigned project managers and worker counts):"]
+    for name in project_names:
+        managers = ", ".join(managers_by_project.get(name, [])) or "None assigned"
+        worker_count = workers_by_project.get(name, 0)
+        lines.append(f"  {name} | project_managers={managers} | worker_count={worker_count}")
+    return "\n".join(lines) + "\n"
+
+
+async def _retrieve_equipment(db: AsyncSession, project_id: int | None) -> str:
+    stmt = (
+        select(
+            Project.name.label("project_name"),
+            DailyLog.log_date,
+            Equipment.name.label("equipment_name"),
+            Equipment.quantity,
+            Equipment.condition,
+        )
+        .join(DailyLog, DailyLog.id == Equipment.daily_log_id)
+        .join(Project, Project.id == DailyLog.project_id)
+        .order_by(DailyLog.log_date.desc())
+        .limit(_ROW_LIMIT)
+    )
+    if project_id:
+        stmt = stmt.where(DailyLog.project_id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
+    rows = (await db.execute(stmt)).all()
+    if not rows:
+        return "EQUIPMENT: No equipment records found.\n"
+    lines = ["EQUIPMENT (recent entries):"]
+    for r in rows:
+        lines.append(f"  [{r.log_date}] {r.project_name} | {r.equipment_name} | qty={r.quantity} | condition={r.condition or 'Not specified'}")
+    return "\n".join(lines) + "\n"
+
+
 async def _retrieve_general(db: AsyncSession, project_id: int | None) -> str:
     stmt = select(Project)
     if project_id:
@@ -328,6 +425,8 @@ _INTENT_HANDLERS = {
     "incidents": _retrieve_incidents,
     "budget": _retrieve_budget,
     "phases": _retrieve_phases,
+    "personnel": _retrieve_personnel,
+    "equipment": _retrieve_equipment,
     "general": _retrieve_general,
 }
 
