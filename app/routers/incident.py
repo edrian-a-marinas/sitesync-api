@@ -10,6 +10,9 @@ from app.services.incident import (
     create_incident as _create_incident,
 )
 from app.services.incident import (
+    delete_incident as _delete_incident,
+)
+from app.services.incident import (
     get_incidents as _get_incidents,
 )
 from app.services.incident import (
@@ -64,3 +67,20 @@ async def update_incident(
     if incident is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")
     return incident
+
+
+@router.delete("/{incident_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def delete_incident(
+    project_id: int,
+    log_id: int,
+    incident_id: int,
+    request: Request,
+    current_user: User = Depends(require_owner_or_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _delete_incident(project_id, log_id, incident_id, current_user, db)
+    if result is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident not found")

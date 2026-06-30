@@ -82,3 +82,21 @@ async def update_incident(
     await delete_cache("dashboard:owner")
     logger.info(f"INCIDENT_UPDATE | log_id={log_id} | incident_id={incident_id} | updated_by={current_user.id} | status=success")
     return incident
+
+
+async def delete_incident(project_id: int, log_id: int, incident_id: int, current_user: User, db: AsyncSession) -> bool | None:
+    if not await _check_manager_assigned(project_id, current_user, db):
+        return False
+    incident = (await db.execute(select(Incident).where(Incident.id == incident_id).where(Incident.daily_log_id == log_id))).scalar_one_or_none()
+    if not incident:
+        logger.warning(
+            f"INCIDENT_DELETE | log_id={log_id} | incident_id={incident_id} | deleted_by={current_user.id} | status=failed | reason=not found"
+        )
+        return None
+    await db.delete(incident)
+    await db.commit()
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
+    logger.info(f"INCIDENT_DELETE | log_id={log_id} | incident_id={incident_id} | deleted_by={current_user.id} | status=success")
+    return True
