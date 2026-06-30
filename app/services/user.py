@@ -153,6 +153,20 @@ async def set_user_status(user_id: int, is_active: bool, current_user: User, db:
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if not user:
         return None
+    if user_id == current_user.id:
+        if not current_role or current_role.name != "project_manager" or is_active is not False:
+            logger.warning(
+                f"USER_ACTIVE | role={current_role.name if current_role else None} | user_id={current_user.id} | attempted_by={current_user.id} | status=forbidden | reason=self status change not allowed"
+            )
+            return None
+        user.is_active = False
+        await db.commit()
+        await db.refresh(user)
+        await delete_pattern(f"users:{current_user.id}:*")
+        logger.info(
+            f"USER_ACTIVE | role={current_role.name} | user_id={current_user.id} | is_active=False | updated_by={current_user.id} | status=success"
+        )
+        return user
     if not current_role or current_role.name != "owner":
         user_role = (await db.execute(select(Role).where(Role.id == user.role_id))).scalar_one_or_none()
         if not user_role or user_role.name != "site_worker":
