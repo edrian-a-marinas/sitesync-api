@@ -84,3 +84,22 @@ async def update_material(
     await delete_pattern("ml:*")
     logger.info(f"MATERIAL_UPDATE | log_id={log_id} | material_id={material_id} | updated_by={current_user.id} | status=success")
     return material
+
+
+async def delete_material(project_id: int, log_id: int, material_id: int, current_user: User, db: AsyncSession) -> bool | None:
+    if not await _check_manager_assigned(project_id, current_user, db):
+        return False
+    material = (await db.execute(select(Material).where(Material.id == material_id).where(Material.daily_log_id == log_id))).scalar_one_or_none()
+    if not material:
+        logger.warning(
+            f"MATERIAL_DELETE | log_id={log_id} | material_id={material_id} | deleted_by={current_user.id} | status=failed | reason=not found"
+        )
+        return None
+    await db.delete(material)
+    await db.commit()
+    await delete_cache(f"dashboard:manager:{project_id}")
+    await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
+    await delete_cache("dashboard:owner")
+    await delete_pattern("ml:*")
+    logger.info(f"MATERIAL_DELETE | log_id={log_id} | material_id={material_id} | deleted_by={current_user.id} | status=success")
+    return True
