@@ -235,13 +235,13 @@ class TestGetAttendance:
 class TestGetMyAttendanceHistory:
     async def test_worker_sees_own_history(self, worker_client: AsyncClient, seed_users, seed_attendance_data):
         d = seed_attendance_data
-        res = await worker_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/{d['log'].id}/attendance/me")
+        res = await worker_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/attendance/me")
         assert res.status_code == 200
         assert isinstance(res.json(), list)
 
     async def test_owner_gets_empty_own_history(self, owner_client: AsyncClient, seed_attendance_data):
         d = seed_attendance_data
-        res = await owner_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/{d['log'].id}/attendance/me")
+        res = await owner_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/attendance/me")
         assert res.status_code == 200
         assert res.json() == []
 
@@ -267,11 +267,11 @@ class TestGetMyAttendanceHistory:
                 )
                 session.add(log)
                 await session.flush()
-        res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs/{log.id}/attendance/me")
+        res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs/attendance/me")
         assert res.status_code == 200
         assert res.json() == []
 
     async def test_unauthenticated_cannot_get_history(self, unauth_client: AsyncClient, seed_attendance_data):
         d = seed_attendance_data
-        res = await unauth_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/{d['log'].id}/attendance/me")
+        res = await unauth_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/attendance/me")
         assert res.status_code == 401
