@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import delete_cache
+from app.core.cache import delete_cache, get_cache, set_cache
 from app.models.incident import Incident
 from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -29,7 +29,6 @@ async def _check_manager_assigned(project_id: int, current_user: User, db: Async
 
 async def get_incidents(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> list[Incident]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
-
     if role and role.name == "site_worker":
         assigned = (
             await db.execute(
@@ -40,9 +39,28 @@ async def get_incidents(project_id: int, log_id: int, current_user: User, db: As
             logger.warning(f"INCIDENT_GET | log_id={log_id} | user_id={current_user.id} | status=failed | reason=worker not assigned to project")
             return []
 
+    cache_key = f"incident:{project_id}:{log_id}"
+    cached = await get_cache(cache_key)
+    if cached is not None:
+        logger.info(f"INCIDENT_GET | log_id={log_id} | user_id={current_user.id} | count={len(cached)} | source=cache")
+        return [Incident(**item) for item in cached]
+
     result = await db.execute(select(Incident).where(Incident.daily_log_id == log_id))
     incidents = result.scalars().all()
-    logger.info(f"INCIDENT_GET | log_id={log_id} | user_id={current_user.id} | count={len(incidents)}")
+    logger.info(f"INCIDENT_GET | log_id={log_id} | user_id={current_user.id} | count={len(incidents)} | source=db")
+
+    serialized = [
+        {
+            "id": i.id,
+            "daily_log_id": i.daily_log_id,
+            "reported_by": i.reported_by,
+            "description": i.description,
+            "severity": i.severity,
+            "status": i.status,
+        }
+        for i in incidents
+    ]
+    await set_cache(cache_key, serialized, ttl=3600)
     return incidents
 
 
@@ -53,6 +71,7 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
     db.add(incident)
     await db.commit()
     await db.refresh(incident)
+    await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
@@ -77,6 +96,7 @@ async def update_incident(
         setattr(incident, field, value)
     await db.commit()
     await db.refresh(incident)
+    await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
@@ -95,6 +115,7 @@ async def delete_incident(project_id: int, log_id: int, incident_id: int, curren
         return None
     await db.delete(incident)
     await db.commit()
+    await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
