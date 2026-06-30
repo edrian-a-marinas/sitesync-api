@@ -301,10 +301,55 @@ class TestUpdateEquipment:
     async def test_unauthenticated_cannot_update(self, unauth_client: AsyncClient, seed_users, test_session_factory):
         project = await create_project(test_session_factory, seed_users["owner"].id)
         log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
-
         res = await unauth_client.patch(
             equipment_detail_url(project.id, log.id, 1),
             json=EQUIPMENT_UPDATE_PAYLOAD,
         )
+        assert res.status_code == 401
 
+
+# ---------------------------------------------------------------------------
+# DELETE /equipment/{equipment_id}  (delete)
+# ---------------------------------------------------------------------------
+class TestDeleteEquipment:
+    async def test_owner_can_delete_equipment(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        equipment_id = await create_equipment_in_db(test_session_factory, log.id)
+        res = await owner_client.delete(equipment_detail_url(project.id, log.id, equipment_id))
+        assert res.status_code == 204
+
+    async def test_assigned_manager_can_delete_equipment(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        await assign_manager(test_session_factory, project.id, seed_users["manager"].id)
+        equipment_id = await create_equipment_in_db(test_session_factory, log.id)
+        res = await manager_client.delete(equipment_detail_url(project.id, log.id, equipment_id))
+        assert res.status_code == 204
+
+    async def test_unassigned_manager_cannot_delete_equipment(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        equipment_id = await create_equipment_in_db(test_session_factory, log.id)
+        res = await manager_client.delete(equipment_detail_url(project.id, log.id, equipment_id))
+        assert res.status_code == 403
+
+    async def test_delete_nonexistent_equipment_returns_404(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        res = await owner_client.delete(equipment_detail_url(project.id, log.id, 99999))
+        assert res.status_code == 404
+
+    async def test_site_worker_cannot_delete_equipment(self, worker_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        equipment_id = await create_equipment_in_db(test_session_factory, log.id)
+        res = await worker_client.delete(equipment_detail_url(project.id, log.id, equipment_id))
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_delete(self, unauth_client: AsyncClient, seed_users, test_session_factory):
+        project = await create_project(test_session_factory, seed_users["owner"].id)
+        log = await create_daily_log(test_session_factory, project.id, seed_users["owner"].id)
+        equipment_id = await create_equipment_in_db(test_session_factory, log.id)
+        res = await unauth_client.delete(equipment_detail_url(project.id, log.id, equipment_id))
         assert res.status_code == 401
