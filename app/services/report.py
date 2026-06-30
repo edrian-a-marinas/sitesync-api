@@ -241,8 +241,11 @@ def generate_report_sync(project_id: int, generated_by: int | None, db, source: 
 
 
 def _get_file_url(s3_key: str) -> str:
-
     return generate_presigned_url(s3_key)
+
+
+async def get_report_for_download(project_id: int, report_id: int, db: AsyncSession) -> Report | None:
+    return (await db.execute(select(Report).where(Report.id == report_id).where(Report.project_id == project_id))).scalar_one_or_none()
 
 
 def cleanup_old_reports_sync(db) -> int:

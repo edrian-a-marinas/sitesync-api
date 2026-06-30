@@ -35,3 +35,9 @@ def generate_presigned_url(key: str, expires_in: int = 3600) -> str:
 def delete_file(key: str) -> None:
     client = get_s3_client()
     client.delete_object(Bucket=settings.AWS_S3_BUCKET, Key=key)
+
+
+def get_file_bytes(key: str) -> bytes:
+    client = get_s3_client()
+    obj = client.get_object(Bucket=settings.AWS_S3_BUCKET, Key=key)
+    return obj["Body"].read()
