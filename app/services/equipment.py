@@ -75,3 +75,18 @@ async def update_equipment(
     await db.refresh(equipment)
     logger.info(f"EQUIPMENT_UPDATE | log_id={log_id} | equipment_id={equipment_id} | updated_by={current_user.id} | status=success")
     return equipment
+
+
+async def delete_equipment(project_id: int, log_id: int, equipment_id: int, current_user: User, db: AsyncSession) -> bool | None:
+    if not await _check_manager_assigned(project_id, current_user, db):
+        return False
+    equipment = (await db.execute(select(Equipment).where(Equipment.id == equipment_id).where(Equipment.daily_log_id == log_id))).scalar_one_or_none()
+    if not equipment:
+        logger.warning(
+            f"EQUIPMENT_DELETE | log_id={log_id} | equipment_id={equipment_id} | deleted_by={current_user.id} | status=failed | reason=not found"
+        )
+        return None
+    await db.delete(equipment)
+    await db.commit()
+    logger.info(f"EQUIPMENT_DELETE | log_id={log_id} | equipment_id={equipment_id} | deleted_by={current_user.id} | status=success")
+    return True

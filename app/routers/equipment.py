@@ -10,6 +10,9 @@ from app.services.equipment import (
     create_equipment as _create_equipment,
 )
 from app.services.equipment import (
+    delete_equipment as _delete_equipment,
+)
+from app.services.equipment import (
     get_equipment as _get_equipment,
 )
 from app.services.equipment import (
@@ -64,3 +67,20 @@ async def update_equipment(
     if equipment is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipment not found")
     return equipment
+
+
+@router.delete("/{equipment_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("20/minute")
+async def delete_equipment(
+    project_id: int,
+    log_id: int,
+    equipment_id: int,
+    request: Request,
+    current_user: User = Depends(require_owner_or_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _delete_equipment(project_id, log_id, equipment_id, current_user, db)
+    if result is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Equipment not found")
