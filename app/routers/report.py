@@ -55,7 +55,7 @@ async def download_report(
 ):
     if not await verify_project_access(project_id, current_user, db):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-    report = await get_report_for_download(project_id, report_id, db)
+    report = await get_report_for_download(project_id, report_id, current_user, db)
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     file_bytes = get_file_bytes(report.s3_key)
