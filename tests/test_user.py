@@ -283,6 +283,16 @@ class TestUpdateUser:
         res = await unauth_client.patch("/api/v1/users/1", json={"first_name": "X"})
         assert res.status_code == 401
 
+    async def test_manager_can_update_own_name(self, manager_client: AsyncClient, owner_client: AsyncClient, seed_users):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_users['manager'].id}",
+            json={"first_name": "SelfEdited"},
+        )
+        assert res.status_code == 200
+        assert res.json()["first_name"] == "SelfEdited"
+        res2 = await owner_client.patch(f"/api/v1/users/{seed_users['manager'].id}", json={"first_name": "Test"})
+        assert res2.status_code == 200
+
 
 # ---------------------------------------------------------------------------
 # PATCH /api/v1/users/{user_id}/deactivate
@@ -352,3 +362,155 @@ class TestActivateUser:
     async def test_unauthenticated(self, unauth_client: AsyncClient):
         res = await unauth_client.patch("/api/v1/users/1/activate")
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/users/me/password
+# ---------------------------------------------------------------------------
+class TestChangePassword:
+    async def test_change_password_success(self, manager_client: AsyncClient):
+        res = await manager_client.patch(
+            "/api/v1/users/me/password",
+            json={"current_password": "password123", "new_password": "newpassword456"},
+        )
+        assert res.status_code == 200
+        res2 = await manager_client.patch(
+            "/api/v1/users/me/password",
+            json={"current_password": "newpassword456", "new_password": "password123"},
+        )
+        assert res2.status_code == 200
+
+    async def test_change_password_wrong_current_password(self, manager_client: AsyncClient):
+        res = await manager_client.patch(
+            "/api/v1/users/me/password",
+            json={"current_password": "wrongpassword", "new_password": "newpassword456"},
+        )
+        assert res.status_code == 400
+
+    async def test_change_password_same_as_current(self, manager_client: AsyncClient):
+        res = await manager_client.patch(
+            "/api/v1/users/me/password",
+            json={"current_password": "password123", "new_password": "password123"},
+        )
+        assert res.status_code == 400
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.patch(
+            "/api/v1/users/me/password",
+            json={"current_password": "x", "new_password": "y12345678"},
+        )
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/users/{user_id}/password/reset
+# ---------------------------------------------------------------------------
+class TestResetPassword:
+    async def test_owner_can_reset_manager_password(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(
+            f"/api/v1/users/{seed_users['manager'].id}/password/reset",
+            json={"new_password": "ownerresetpw1"},
+        )
+        assert res.status_code == 200
+        res2 = await owner_client.patch(
+            f"/api/v1/users/{seed_users['manager'].id}/password/reset",
+            json={"new_password": "password123"},
+        )
+        assert res2.status_code == 200
+
+    async def test_owner_can_reset_worker_password(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}/password/reset",
+            json={"new_password": "ownerresetpw2"},
+        )
+        assert res.status_code == 200
+        res2 = await owner_client.patch(
+            f"/api/v1/users/{seed_users['worker'].id}/password/reset",
+            json={"new_password": "password123"},
+        )
+        assert res2.status_code == 200
+
+    async def test_manager_can_reset_shared_worker_password(self, manager_client: AsyncClient, seed_user_extras):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_user_extras['manager_created_worker'].id}/password/reset",
+            json={"new_password": "pmresetpw1"},
+        )
+        assert res.status_code == 200
+
+    async def test_manager_cannot_reset_unrelated_worker(self, manager_client: AsyncClient, seed_user_extras):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_user_extras['owner_created_worker'].id}/password/reset",
+            json={"new_password": "pmresetpw2"},
+        )
+        assert res.status_code == 403
+
+    async def test_manager_cannot_reset_another_manager(self, manager_client: AsyncClient, seed_user_extras):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_user_extras['manager2'].id}/password/reset",
+            json={"new_password": "pmresetpw3"},
+        )
+        assert res.status_code == 403
+
+    async def test_manager_cannot_reset_owner(self, manager_client: AsyncClient, seed_users):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_users['owner'].id}/password/reset",
+            json={"new_password": "pmresetpw4"},
+        )
+        assert res.status_code == 403
+
+    async def test_owner_cannot_reset_own_password(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(
+            f"/api/v1/users/{seed_users['owner'].id}/password/reset",
+            json={"new_password": "selfresetpw"},
+        )
+        assert res.status_code == 403
+
+    async def test_manager_cannot_reset_own_password(self, manager_client: AsyncClient, seed_users):
+        res = await manager_client.patch(
+            f"/api/v1/users/{seed_users['manager'].id}/password/reset",
+            json={"new_password": "selfresetpw2"},
+        )
+        assert res.status_code == 403
+
+    async def test_reset_nonexistent_user(self, owner_client: AsyncClient):
+        res = await owner_client.patch(
+            "/api/v1/users/99999/password/reset",
+            json={"new_password": "ghostpassword"},
+        )
+        assert res.status_code == 403
+
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.patch(
+            f"/api/v1/users/{seed_users['owner'].id}/password/reset",
+            json={"new_password": "workerattempt"},
+        )
+        assert res.status_code == 403
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.patch(
+            "/api/v1/users/1/password/reset",
+            json={"new_password": "x12345678"},
+        )
+        assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# PATCH /api/v1/users/{user_id}/deactivate — self-deactivation
+# ---------------------------------------------------------------------------
+class TestSelfDeactivate:
+    async def test_manager_can_deactivate_self(self, manager_client: AsyncClient, owner_client: AsyncClient, seed_users):
+        res = await manager_client.patch(f"/api/v1/users/{seed_users['manager'].id}/deactivate")
+        assert res.status_code == 200
+        assert res.json()["is_active"] is False
+        # reactivate via owner so DB state doesn't bleed into other tests
+        res2 = await owner_client.patch(f"/api/v1/users/{seed_users['manager'].id}/activate")
+        assert res2.status_code == 200
+        assert res2.json()["is_active"] is True
+
+    async def test_owner_cannot_deactivate_self(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.patch(f"/api/v1/users/{seed_users['owner'].id}/deactivate")
+        assert res.status_code == 403
+
+    async def test_manager_cannot_reactivate_self_while_active(self, manager_client: AsyncClient, seed_users):
+        res = await manager_client.patch(f"/api/v1/users/{seed_users['manager'].id}/activate")
+        assert res.status_code == 403
