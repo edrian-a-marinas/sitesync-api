@@ -222,7 +222,18 @@ async def reset_password(user_id: int, data: PasswordResetRequest, current_user:
     if current_role_name == "owner":
         allowed = target_role_name in ("owner", "project_manager", "site_worker")
     elif current_role_name == "project_manager":
-        allowed = target_role_name == "site_worker"
+        if target_role_name == "site_worker":
+            shared_project = (
+                await db.execute(
+                    select(WorkerAssignment)
+                    .where(WorkerAssignment.user_id == user_id)
+                    .where(WorkerAssignment.project_id.in_(select(ProjectAssignment.project_id).where(ProjectAssignment.user_id == current_user.id)))
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            allowed = shared_project is not None
+        else:
+            allowed = False
     else:
         allowed = False
     if not allowed:
