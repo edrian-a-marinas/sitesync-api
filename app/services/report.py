@@ -241,8 +241,16 @@ def generate_report_sync(project_id: int, generated_by: int | None, db, source: 
 
 
 def _get_file_url(s3_key: str) -> str:
-
     return generate_presigned_url(s3_key)
+
+
+async def get_report_for_download(project_id: int, report_id: int, current_user: User, db: AsyncSession) -> Report | None:
+    role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    is_owner = role.name == "owner" if role else True
+    query = select(Report).where(Report.id == report_id).where(Report.project_id == project_id)
+    if not is_owner:
+        query = query.where((Report.generated_by == current_user.id) | (Report.generated_by == None))  # noqa: E711
+    return (await db.execute(query)).scalar_one_or_none()
 
 
 def cleanup_old_reports_sync(db) -> int:
