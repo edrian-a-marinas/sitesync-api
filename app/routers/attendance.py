@@ -16,10 +16,10 @@ from app.services.attendance import (
     get_my_attendance_history as _get_my_attendance_history,
 )
 
-router = APIRouter(prefix="/projects/{project_id}/daily-logs/{log_id}/attendance", tags=["Attendance"])
+router = APIRouter(prefix="/projects/{project_id}/daily-logs", tags=["Attendance"])
 
 
-@router.post("", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/{log_id}/attendance", response_model=AttendanceResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")
 async def create_attendance(
     project_id: int,
@@ -35,7 +35,7 @@ async def create_attendance(
     return attendance
 
 
-@router.get("", response_model=list[AttendanceResponse])
+@router.get("/{log_id}/attendance", response_model=list[AttendanceResponse])
 @limiter.limit("30/minute")
 async def get_attendance(
     project_id: int,
@@ -47,7 +47,7 @@ async def get_attendance(
     return await _get_attendance(project_id, log_id, current_user, db)
 
 
-@router.get("/me", response_model=list[AttendanceHistoryResponse])
+@router.get("/attendance/me", response_model=list[AttendanceHistoryResponse])
 @limiter.limit("30/minute")
 async def get_my_attendance_history(
     project_id: int,
