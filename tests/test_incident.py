@@ -294,3 +294,71 @@ class TestUpdateIncident:
             json=INCIDENT_UPDATE_PAYLOAD,
         )
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /incidents/{incident_id} (delete)
+# ---------------------------------------------------------------------------
+class TestDeleteIncident:
+    async def test_owner_can_delete_incident(self, owner_client: AsyncClient, seed_incident_data):
+        d = seed_incident_data
+        create_res = await owner_client.post(incident_url(d["project"].id, d["log"].id), json=INCIDENT_PAYLOAD)
+        incident_id = create_res.json()["id"]
+        res = await owner_client.delete(incident_detail_url(d["project"].id, d["log"].id, incident_id))
+        assert res.status_code == 204
+
+    async def test_assigned_manager_can_delete_incident(self, manager_client: AsyncClient, seed_incident_data):
+        d = seed_incident_data
+        create_res = await manager_client.post(incident_url(d["project"].id, d["log"].id), json=INCIDENT_PAYLOAD)
+        incident_id = create_res.json()["id"]
+        res = await manager_client.delete(incident_detail_url(d["project"].id, d["log"].id, incident_id))
+        assert res.status_code == 204
+
+    async def test_unassigned_manager_cannot_delete_incident(self, manager_client: AsyncClient, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            async with session.begin():
+                project = Project(
+                    owner_id=seed_users["owner"].id,
+                    name="Unassigned Delete Project",
+                    location="Manila",
+                    total_budget=500_000,
+                    start_date=date(2026, 1, 1),
+                    target_end_date=date(2026, 12, 31),
+                    status="Active",
+                )
+                session.add(project)
+                await session.flush()
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 1, 1),
+                    work_accomplished="Test",
+                )
+                session.add(log)
+                await session.flush()
+                incident = Incident(
+                    daily_log_id=log.id,
+                    reported_by=seed_users["owner"].id,
+                    description="A wall collapsed.",
+                    severity="High",
+                    status="Open",
+                )
+                session.add(incident)
+                await session.flush()
+        res = await manager_client.delete(incident_detail_url(project.id, log.id, incident.id))
+        assert res.status_code == 403
+
+    async def test_delete_nonexistent_incident_returns_404(self, owner_client: AsyncClient, seed_incident_data):
+        d = seed_incident_data
+        res = await owner_client.delete(incident_detail_url(d["project"].id, d["log"].id, 99999))
+        assert res.status_code == 404
+
+    async def test_site_worker_cannot_delete_incident(self, worker_client: AsyncClient, seed_incident_data):
+        d = seed_incident_data
+        res = await worker_client.delete(incident_detail_url(d["project"].id, d["log"].id, 1))
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_delete(self, unauth_client: AsyncClient, seed_incident_data):
+        d = seed_incident_data
+        res = await unauth_client.delete(incident_detail_url(d["project"].id, d["log"].id, 1))
+        assert res.status_code == 401

@@ -296,3 +296,48 @@ class TestUpdateMaterial:
             json=MATERIAL_UPDATE_PAYLOAD,
         )
         assert res.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# DELETE /materials/{material_id}
+# ---------------------------------------------------------------------------
+class TestDeleteMaterial:
+    async def test_owner_can_delete_material(self, owner_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        create_res = await owner_client.post(
+            material_url(d["owner_project"].id, d["owner_log"].id),
+            json={"name": "Plywood", "quantity": 2.0, "unit": "sheets", "unit_cost": 50.0},
+        )
+        material_id = create_res.json()["id"]
+        res = await owner_client.delete(material_detail_url(d["owner_project"].id, d["owner_log"].id, material_id))
+        assert res.status_code == 204
+
+    async def test_assigned_manager_can_delete_material(self, manager_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        create_res = await manager_client.post(
+            material_url(d["manager_project"].id, d["manager_log"].id),
+            json={"name": "Plywood", "quantity": 2.0, "unit": "sheets", "unit_cost": 50.0},
+        )
+        material_id = create_res.json()["id"]
+        res = await manager_client.delete(material_detail_url(d["manager_project"].id, d["manager_log"].id, material_id))
+        assert res.status_code == 204
+
+    async def test_unassigned_manager_cannot_delete_material(self, manager_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        res = await manager_client.delete(material_detail_url(d["unassigned_project"].id, d["unassigned_log"].id, d["unassigned_material"].id))
+        assert res.status_code == 403
+
+    async def test_delete_nonexistent_material_returns_404(self, owner_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        res = await owner_client.delete(material_detail_url(d["owner_project"].id, d["owner_log"].id, 99999))
+        assert res.status_code == 404
+
+    async def test_site_worker_cannot_delete_material(self, worker_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        res = await worker_client.delete(material_detail_url(d["worker_project"].id, d["worker_log"].id, d["worker_material"].id))
+        assert res.status_code == 403
+
+    async def test_unauthenticated_cannot_delete(self, unauth_client: AsyncClient, seed_material_data):
+        d = seed_material_data
+        res = await unauth_client.delete(material_detail_url(d["owner_project"].id, d["owner_log"].id, d["owner_material"].id))
+        assert res.status_code == 401
