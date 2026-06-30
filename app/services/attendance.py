@@ -3,10 +3,11 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import delete_cache
+from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment, WorkerAssignment
+from app.models.role import Role
 from app.models.user import User
 from app.schemas.attendance import AttendanceCreate
 
@@ -61,6 +62,7 @@ async def create_attendance(project_id: int, log_id: int, data: AttendanceCreate
     db.add(attendance)
     await db.commit()
     await db.refresh(attendance)
+    await delete_pattern(f"attendance:{project_id}:{log_id}:*")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_cache("dashboard:owner")
@@ -73,17 +75,28 @@ async def get_attendance(project_id: int, log_id: int, current_user: User, db: A
     if not log:
         logger.warning(f"ATTENDANCE | get | log_id={log_id} | project_id={project_id} | status=failed | reason=log not found")
         return []
-    from app.models.role import Role
 
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
-    if role and role.name == "site_worker":
+    is_worker = role and role.name == "site_worker"
+    scope = str(current_user.id) if is_worker else "all"
+    cache_key = f"attendance:{project_id}:{log_id}:{scope}"
+
+    cached = await get_cache(cache_key)
+    if cached is not None:
+        logger.info(f"ATTENDANCE | get | log_id={log_id} | user_id={current_user.id} | scope={scope} | count={len(cached)} | source=cache")
+        return cached
+
+    if is_worker:
         result = await db.execute(select(Attendance).where(Attendance.daily_log_id == log_id).where(Attendance.worker_id == current_user.id))
-        logger.info(f"ATTENDANCE | get | log_id={log_id} | worker_id={current_user.id} | scope=own")
+        logger.info(f"ATTENDANCE | get | log_id={log_id} | worker_id={current_user.id} | scope=own | source=db")
     else:
         result = await db.execute(select(Attendance).where(Attendance.daily_log_id == log_id))
-        logger.info(f"ATTENDANCE | get | log_id={log_id} | user_id={current_user.id} | scope=all")
+        logger.info(f"ATTENDANCE | get | log_id={log_id} | user_id={current_user.id} | scope=all | source=db")
 
-    return result.scalars().all()
+    attendance = result.scalars().all()
+    serialized = [{"id": a.id, "daily_log_id": a.daily_log_id, "worker_id": a.worker_id, "hours_worked": float(a.hours_worked)} for a in attendance]
+    await set_cache(cache_key, serialized, ttl=3600)
+    return attendance
 
 
 async def get_my_attendance_history(project_id: int, current_user: User, db: AsyncSession, page: int = 1, limit: int = 20) -> list[dict]:

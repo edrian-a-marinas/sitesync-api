@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import delete_cache, delete_pattern
+from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.models.material import Material
 from app.models.project import ProjectAssignment
 from app.models.role import Role
@@ -13,7 +13,7 @@ from app.schemas.material import MaterialCreate, MaterialUpdate
 logger = logging.getLogger(__name__)
 
 
-async def get_materials(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> list[Material]:
+async def get_materials(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> list[Material] | list[dict]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
 
     if role and role.name == "site_worker":
@@ -28,9 +28,29 @@ async def get_materials(project_id: int, log_id: int, current_user: User, db: As
             logger.warning(f"MATERIAL_GET | log_id={log_id} | user_id={current_user.id} | status=failed | reason=worker not assigned to project")
             return []
 
+    cache_key = f"material:{project_id}:{log_id}"
+    cached = await get_cache(cache_key)
+    if cached is not None:
+        logger.info(f"MATERIAL_GET | log_id={log_id} | user_id={current_user.id} | count={len(cached)} | source=cache")
+        return cached
+
     result = await db.execute(select(Material).where(Material.daily_log_id == log_id))
     materials = result.scalars().all()
-    logger.info(f"MATERIAL_GET | log_id={log_id} | user_id={current_user.id} | count={len(materials)}")
+    logger.info(f"MATERIAL_GET | log_id={log_id} | user_id={current_user.id} | count={len(materials)} | source=db")
+
+    serialized = [
+        {
+            "id": m.id,
+            "daily_log_id": m.daily_log_id,
+            "name": m.name,
+            "quantity": float(m.quantity),
+            "unit": m.unit,
+            "unit_cost": float(m.unit_cost),
+            "total_cost": float(m.total_cost),
+        }
+        for m in materials
+    ]
+    await set_cache(cache_key, serialized, ttl=3600)
     return materials
 
 
