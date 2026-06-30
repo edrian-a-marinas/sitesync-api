@@ -51,3 +51,12 @@ class UserUpdateRequest(BaseModel):
     middle_name: NameStr | None = None
     last_name: NameStr | None = None
     phone_number: PhoneStr | None = None
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: PasswordStr
+    new_password: PasswordStr
+
+
+class PasswordResetRequest(BaseModel):
+    new_password: PasswordStr

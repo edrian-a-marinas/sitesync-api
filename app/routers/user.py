@@ -1,17 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import require_owner_or_manager
+from app.core.dependencies import get_current_user, require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.auth import UserListResponse, UserResponse, UserUpdateRequest
+from app.schemas.auth import PasswordChangeRequest, PasswordResetRequest, UserListResponse, UserResponse, UserUpdateRequest
+from app.services.user import (
+    change_password as _change_password,
+)
 from app.services.user import get_user_assignments as _get_user_assignments
 from app.services.user import (
     get_user_by_id as _get_user_by_id,
 )
 from app.services.user import (
     get_users as _get_users,
+)
+from app.services.user import (
+    reset_password as _reset_password,
 )
 from app.services.user import (
     set_user_status as _set_user_status,
@@ -60,6 +66,37 @@ async def get_user_by_id(
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
+
+@router.patch("/me/password")
+@limiter.limit("5/minute")
+async def change_password(
+    data: PasswordChangeRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _change_password(data, current_user, db)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if result is False:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be different from current password")
+    return {"detail": "Password updated successfully"}
+
+
+@router.patch("/{user_id}/password/reset")
+@limiter.limit("10/minute")
+async def reset_password(
+    user_id: int,
+    data: PasswordResetRequest,
+    request: Request,
+    current_user: User = Depends(require_owner_or_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await _reset_password(user_id, data, current_user, db)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied or user not found")
+    return {"detail": "Password reset successfully"}
 
 
 @router.patch("/{user_id}", response_model=UserResponse)

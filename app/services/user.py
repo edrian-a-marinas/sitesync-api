@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_pattern, get_cache, set_cache
+from app.core.security import hash_password, verify_password
 from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.auth import UserListResponse, UserResponse, UserUpdateRequest
+from app.schemas.auth import PasswordChangeRequest, PasswordResetRequest, UserListResponse, UserResponse, UserUpdateRequest
 
 logger = logging.getLogger(__name__)
 
@@ -175,3 +176,44 @@ async def set_user_status(user_id: int, is_active: bool, current_user: User, db:
     await delete_pattern(f"users:{current_user.id}:*")
     logger.info(f"USER_ACTIVE | user_id={user_id} | is_active={is_active} | updated_by={current_user.id} | status=success")
     return user
+
+
+async def change_password(data: PasswordChangeRequest, current_user: User, db: AsyncSession) -> bool | None:
+    if not verify_password(data.current_password, current_user.password_hash):
+        logger.warning(f"PASSWORD_CHANGE | user_id={current_user.id} | status=failed | reason=incorrect current password")
+        return None
+    if verify_password(data.new_password, current_user.password_hash):
+        logger.warning(f"PASSWORD_CHANGE | user_id={current_user.id} | status=failed | reason=new password same as current")
+        return False
+    current_user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    logger.info(f"PASSWORD_CHANGE | user_id={current_user.id} | status=success")
+    return True
+
+
+async def reset_password(user_id: int, data: PasswordResetRequest, current_user: User, db: AsyncSession) -> bool | None:
+    if user_id == current_user.id:
+        logger.warning(
+            f"PASSWORD_RESET | user_id={current_user.id} | target_id={user_id} | status=forbidden | reason=cannot reset own password via reset endpoint"
+        )
+        return None
+    target_user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
+    if not target_user:
+        return None
+    current_role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    target_role = (await db.execute(select(Role).where(Role.id == target_user.role_id))).scalar_one_or_none()
+    current_role_name = current_role.name if current_role else None
+    target_role_name = target_role.name if target_role else None
+    if current_role_name == "owner":
+        allowed = target_role_name in ("owner", "project_manager", "site_worker")
+    elif current_role_name == "project_manager":
+        allowed = target_role_name == "site_worker"
+    else:
+        allowed = False
+    if not allowed:
+        logger.warning(f"PASSWORD_RESET | role={current_role_name} | user_id={current_user.id} | target_id={user_id} | status=forbidden")
+        return None
+    target_user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    logger.info(f"PASSWORD_RESET | role={current_role_name} | user_id={current_user.id} | target_id={user_id} | status=success")
+    return True
