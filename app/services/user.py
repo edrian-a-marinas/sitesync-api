@@ -83,7 +83,8 @@ async def get_user_by_id(user_id: int, current_user: User, db: AsyncSession) -> 
         return None
     if role and role.name == "owner":
         return user
-
+    if role and role.name == "project_manager" and user_id == current_user.id:
+        return user
     # PM — verify worker shares a project with them
     in_project = (
         await db.execute(
