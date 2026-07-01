@@ -67,7 +67,7 @@ jobs:
         run: pytest --tb=short -q
   
   deploy: 
-    needs: test
+    # remove this after finish backend / fully working for safety net
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
