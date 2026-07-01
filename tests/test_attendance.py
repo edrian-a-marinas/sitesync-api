@@ -237,13 +237,18 @@ class TestGetMyAttendanceHistory:
         d = seed_attendance_data
         res = await worker_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/attendance/me")
         assert res.status_code == 200
-        assert isinstance(res.json(), list)
+        data = res.json()
+        assert "items" in data
+        assert "total" in data
+        assert isinstance(data["items"], list)
 
     async def test_owner_gets_empty_own_history(self, owner_client: AsyncClient, seed_attendance_data):
         d = seed_attendance_data
         res = await owner_client.get(f"/api/v1/projects/{d['project'].id}/daily-logs/attendance/me")
         assert res.status_code == 200
-        assert res.json() == []
+        data = res.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     async def test_history_empty_when_no_records(self, worker_client: AsyncClient, test_session_factory, seed_users):
         async with test_session_factory() as session:
@@ -269,7 +274,9 @@ class TestGetMyAttendanceHistory:
                 await session.flush()
         res = await worker_client.get(f"/api/v1/projects/{project.id}/daily-logs/attendance/me")
         assert res.status_code == 200
-        assert res.json() == []
+        data = res.json()
+        assert data["items"] == []
+        assert data["total"] == 0
 
     async def test_unauthenticated_cannot_get_history(self, unauth_client: AsyncClient, seed_attendance_data):
         d = seed_attendance_data
