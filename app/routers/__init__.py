@@ -11,6 +11,7 @@ from app.routers.project import router as project_router
 from app.routers.report import router as report_router
 from app.routers.site_photo import router as site_photo_router
 from app.routers.user import router as user_router
+from app.routers.worker import router as worker_router
 
 all_routers = [
     auth_router,
@@ -26,4 +27,5 @@ all_routers = [
     report_router,
     ml_router,
     site_photo_router,
+    worker_router,
 ]
