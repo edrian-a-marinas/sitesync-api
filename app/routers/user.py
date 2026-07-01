@@ -35,7 +35,7 @@ async def get_users(
     request: Request,
     scope: str | None = None,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=10, ge=1, le=100),
     search: str | None = Query(default=None, max_length=100),
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
