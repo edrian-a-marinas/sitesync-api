@@ -23,7 +23,7 @@ ALLOWED_CONTENT_TYPES = settings.ALLOWED_CONTENT_TYPES
 MAX_FILE_SIZE_BYTES = settings.MAX_FILE_SIZE_BYTES  # 10MB
 
 
-async def _check_manager_assigned(project_id: int, current_user: User, db: AsyncSession) -> tuple[bool, str | None]:
+async def _check_role_access(project_id: int, current_user: User, db: AsyncSession) -> tuple[bool, str | None]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     role_name = role.name if role else None
     if role and role.name == "project_manager":
@@ -35,6 +35,17 @@ async def _check_manager_assigned(project_id: int, current_user: User, db: Async
         if not assigned:
             logger.warning(
                 f"SITE_PHOTO | user_id={current_user.id} | role={role_name} | project_id={project_id} | status=failed | reason=manager not assigned to project"
+            )
+            return False, role_name
+    if role and role.name == "site_worker":
+        assigned = (
+            await db.execute(
+                select(WorkerAssignment).where(WorkerAssignment.project_id == project_id).where(WorkerAssignment.user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not assigned:
+            logger.warning(
+                f"SITE_PHOTO | user_id={current_user.id} | role={role_name} | project_id={project_id} | status=failed | reason=worker not assigned to project"
             )
             return False, role_name
     return True, role_name
@@ -67,7 +78,7 @@ def _build_response(photo: SitePhoto) -> dict:
 
 
 async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, current_user: User, db: AsyncSession) -> dict | None | bool:
-    is_assigned, role_name = await _check_manager_assigned(project_id, current_user, db)
+    is_assigned, role_name = await _check_role_access(project_id, current_user, db)
     if not is_assigned:
         return False
     log = (await db.execute(select(DailyLog).where(DailyLog.id == log_id).where(DailyLog.project_id == project_id))).scalar_one_or_none()
@@ -139,10 +150,9 @@ async def get_site_photos(project_id: int, log_id: int, current_user: User, db: 
 
 
 async def delete_site_photo(project_id: int, log_id: int, photo_id: int, current_user: User, db: AsyncSession) -> bool | None:
-    is_assigned, role_name = await _check_manager_assigned(project_id, current_user, db)
+    is_assigned, role_name = await _check_role_access(project_id, current_user, db)
     if not is_assigned:
         return False
-
     photo = (await db.execute(select(SitePhoto).where(SitePhoto.id == photo_id).where(SitePhoto.daily_log_id == log_id))).scalar_one_or_none()
 
     if not photo:

@@ -51,3 +51,12 @@ async def require_owner_or_manager(current_user: User = Depends(get_current_user
         logger.warning(f"AUTHZ | user_id={current_user.id} | role={role.name if role else None} | status=forbidden | required=owner_or_manager")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner or Project Manager access required")
     return current_user
+
+
+async def require_worker(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> User:
+    result = await db.execute(select(Role).where(Role.id == current_user.role_id))
+    role = result.scalar_one_or_none()
+    if not role or role.name != "site_worker":
+        logger.warning(f"AUTHZ | user_id={current_user.id} | role={role.name if role else None} | status=forbidden | required=site_worker")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Site Worker access required")
+    return current_user
