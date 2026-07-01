@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.pool import NullPool
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.cache import redis_client
 from app.core.dependencies import get_current_user, require_owner, require_owner_or_manager
 from app.core.limiter import configure_limiter
 from app.core.logging import http_exception_handler, validation_exception_handler
@@ -27,6 +28,11 @@ from app.models.user import User
 from app.routers import all_routers
 
 TEST_DATABASE_URL = settings.TEST_DATABASE_URL
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session", autouse=True)
+async def flush_test_cache():
+    await redis_client.flushdb()
 
 
 # ── Isolated app factory — one instance per role, no override bleed ───────────
