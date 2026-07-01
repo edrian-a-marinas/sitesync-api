@@ -21,12 +21,13 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # DEMO FEATURE: remove this migration content if demo mode is retired
     op.execute(f"""
-        INSERT INTO users (email, password_hash, first_name, last_name, role_id, is_active, is_demo)
+        INSERT INTO users (id, email, password_hash, first_name, last_name, role_id, is_active, is_demo)
         VALUES
-        ('demo.owner@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Owner', 1, true, true),
-        ('demo.pm@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Manager', 2, true, true),
-        ('demo.worker@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Worker', 3, true, true)
+        (31, 'demo.owner@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Owner', 1, true, true),
+        (32, 'demo.pm@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Manager', 2, true, true),
+        (33, 'demo.worker@sitesync.com', '{hash_password("demo1234")}', 'Demo', 'Worker', 3, true, true)
     """)
+    op.execute("SELECT setval('users_id_seq', (SELECT MAX(id) FROM users))")
 
 
 def downgrade() -> None:
