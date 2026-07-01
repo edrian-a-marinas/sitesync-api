@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI  # remove depends after demo
 
 logging.basicConfig(
     level=logging.INFO,
@@ -11,14 +11,17 @@ from contextlib import asynccontextmanager
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.demo import block_demo_writes  # DEMO FEATURE: remove this import if demo mode is retired
 from app.core.limiter import configure_limiter
 from app.core.logging import check_connections, get_cache_label, get_db_label, get_redis_label, http_exception_handler, validation_exception_handler
 from app.core.middleware import configure_middlewares
 from app.core.settings import settings
-from app.routers import all_routers
+from app.routers import all_routers, auth_router
 from app.routers.health import router as health_router
 
 logger = logging.getLogger(__name__)
+
+# DEMO - RUN "alembic downgrade 1094975a8b5d" if demo feature finished
 
 
 @asynccontextmanager
@@ -43,8 +46,10 @@ configure_middlewares(app)
 configure_limiter(app)
 
 API_PREFIX = "/api/v1"
-
 for router in all_routers:
-    app.include_router(router, prefix=API_PREFIX)
-
+    # DEMO FEATURE: auth_router excluded so login/register work without a token; remove this if-check if demo mode is retired
+    if router is auth_router:
+        app.include_router(router, prefix=API_PREFIX)
+    else:
+        app.include_router(router, prefix=API_PREFIX, dependencies=[Depends(block_demo_writes)])
 app.include_router(health_router)
