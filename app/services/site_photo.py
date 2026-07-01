@@ -122,6 +122,28 @@ async def upload_site_photo(project_id: int, log_id: int, file: UploadFile, curr
     return _build_response(photo)
 
 
+async def get_site_photo_for_download(project_id: int, log_id: int, photo_id: int, current_user: User, db: AsyncSession) -> SitePhoto | None | bool:
+    role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
+    role_name = role.name if role else None
+    if role and role.name == "site_worker":
+        assigned = (
+            await db.execute(
+                select(WorkerAssignment).where(WorkerAssignment.project_id == project_id).where(WorkerAssignment.user_id == current_user.id)
+            )
+        ).scalar_one_or_none()
+        if not assigned:
+            logger.warning(
+                f"SITE_PHOTO_DOWNLOAD | photo_id={photo_id} | user_id={current_user.id} | role={role_name} | status=failed | reason=worker not assigned to project"
+            )
+            return False
+    photo = (await db.execute(select(SitePhoto).where(SitePhoto.id == photo_id).where(SitePhoto.daily_log_id == log_id))).scalar_one_or_none()
+    if not photo:
+        logger.warning(f"SITE_PHOTO_DOWNLOAD | photo_id={photo_id} | log_id={log_id} | user_id={current_user.id} | status=not_found")
+        return None
+    logger.info(f"SITE_PHOTO_DOWNLOAD | photo_id={photo_id} | log_id={log_id} | user_id={current_user.id} | role={role_name} | status=success")
+    return photo
+
+
 async def get_site_photos(project_id: int, log_id: int, current_user: User, db: AsyncSession) -> list[dict]:
     role = (await db.execute(select(Role).where(Role.id == current_user.role_id))).scalar_one_or_none()
     role_name = role.name if role else None
