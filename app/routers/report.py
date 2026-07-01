@@ -73,7 +73,7 @@ async def get_reports(
     project_id: int,
     request: Request,
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=10, ge=1, le=100),
     current_user: User = Depends(require_owner_or_manager),
     db: AsyncSession = Depends(get_db),
 ):
