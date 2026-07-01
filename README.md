@@ -1,100 +1,110 @@
 # SiteSync — Construction Project & Daily Site Log SaaS
 
-## Plain English Concept
+🔗 **[Live Demo](https://getsitesync.vercel.app)** · 🎬 **[Demo Video](https://drive.google.com/file/d/1l8umfMvtsFmqvmx9zrP3nbgHdjgkLYcd/view?usp=drive_link)** · 💻 **[Frontend Repo](https://github.com/edrian-a-marinas/sitesync-client)**
 
-**What users do:** Create and manage construction projects, then for each project log daily site activity — workers present, materials consumed, equipment used, and incidents if any. Project Managers submit end-of-shift logs from their assigned site, Project Managers monitor all their projects from a centralized dashboard, and the Owner gets a full cross-project view with an AI assistant that answers questions about cost, progress, materials, workforce, and project performance across all historical records.
-
-**Scope:** Designed for civil engineering and construction companies managing multiple active projects such as residential buildings, commercial developments, roads, bridges, and infrastructure works. The platform focuses on project oversight, daily site operations, workforce tracking, material consumption monitoring, and progress reporting across all construction phases.
-
-**Purpose:** Construction firms running multiple simultaneous projects often lose visibility into daily progress, material consumption, equipment usage, and worker attendance because information is scattered across paper logs, spreadsheets, messaging groups, and disconnected systems. This provides a centralized daily site logging platform where every project submits structured end-of-shift reports, transforming fragmented field data into a single AI-queryable command center that enables leadership to monitor operations and make decisions without manually reviewing spreadsheets or reports.
+## What It Does
+Construction companies managing several job sites at once often lose track of daily progress, materials used, and money spent because everything is scattered across paper logs and spreadsheets. SiteSync brings all of that into one place — every shift, every material, every peso spent — so managers can log daily site activity and owners can instantly see how every project is doing, backed by thousands of historical records.
 
 ---
 
-## Full Technical Concept
+## Key Features
+- **Role-based access** — Owner, Project Manager, and Site Worker each see a different scope of data and actions.
+- **Daily site logging** — workers present, materials consumed, equipment used, and incidents, submitted per shift.
+- **File uploads** — progress photos, receipts, and inspection documents attached to daily logs.
+- **Automated weekly reports** — PDF reports generated in the background and stored for download.
+- **AI assistant** — ask natural language questions about cost, materials, workforce, or incidents across projects.
+- **Predictive analytics** — machine learning models forecast budget overruns, delay risk, and material costs.
+- **Live dashboards** — budget, workforce, and incident KPIs that update automatically as new activity is logged.
 
-### AWS Services
+---
 
-| AWS Service | Description |
-|------------|-------------|
-| **S3** | Stores photos, documents, and generated reports. |
-| **EC2** | Hosts the FastAPI application and background workers celery.  |
-| **RDS** | PostgreSQL database for all project, user, and site log data. |
-| **ALB** | Distributes traffic across multiple EC2 instances. |
-| **IAM** | Manages least-privilege credentials for backend S3, RDS, and EC2 access. |
+## Architecture Overview
 
-### Authentication & User Layer
+```mermaid
+flowchart LR
+    Client[React SPA] -->|REST API| API[FastAPI - EC2]
+    API --> DB[(PostgreSQL - RDS)]
+    API --> Cache[(Redis Cache)]
+    API -->|queue task| Broker[(Redis Broker)]
+    Broker --> Worker[Celery Worker]
+    Worker --> DB
+    Worker --> S3[(AWS S3)]
+    Worker --> LLM[Groq LLM]
+    Beat[Celery Beat] -->|scheduled jobs| Broker
+    API --> S3
+```
 
-Users register and authenticate via JWT-based auth built into FastAPI. All resources — projects, site assignments, daily logs, attendance records, material entries, reports, and AI query history — are scoped per authenticated user and role. Three roles exist: Owner (full access, cross-project visibility, AI queries, and reporting), Project Manager (assigned projects only with full log management capabilities), and Site Worker (attendance submission and site-level reporting for assigned locations only). AWS IAM manages backend cloud credentials for S3 and RDS access, enforcing least-privilege permissions at the infrastructure layer.
+---
 
-### Project & Site Management
+## Tech Stack
+| Layer | Technology |
+|-------|------------|
+| Backend | Python, FastAPI, PostgreSQL, SQLAlchemy, Alembic, asyncio, SlowAPI  |
+| Frontend | React, TypeScript, TanStack (Router, Table), Zod, Zustand, Axios, Radix UI, TailwindCSS |
+| AI / ML | RAG, GroqAPI, scikit-learn, RandomForest — training, forecasting, and prediction (2 year seeded datas) |
+| Security | JWT, Role-based dependencies endpoints, Rate limiting, CORS, secrets credentials management, ORM-protected SQL, HTTPS |
+| Performance | Redis (cache + broker), Celery/Beat, end-to-end pagination, Tanstack Query cache, database indexes |
+| Testing | Pytest — 348 tests, across all core business logic|
+| Deployment | AWS (EC2, RDS, S3), Docker, Vercel, GitHub Actions |
 
-Owners create projects with a name, location, budget, start date, and target completion date. Each project contains multiple phases such as Foundation, Structure, and Finishing, with budget allocations and progress tracking maintained separately for each phase. Project Managers are assigned to projects by the Owner, while Site Workers are assigned to specific sites under those projects. All project records are represented as SQLAlchemy models stored in AWS RDS PostgreSQL. Alembic manages schema migrations for projects, phases, assignments, and related project management tables.
+---
 
-### Daily Site Log
+## API & Structure
+- **Architecture**: Monolithic FastAPI backend, layered `routers → services → schemas → models`
+- **Endpoints**: 69 REST endpoints across 13 relational tables — [Swagger Docs](https://drive.google.com/drive/folders/1T14fpvZQssFRVswHp2uzp9LEicIBZEJn?usp=sharing)
+- **Validation**: End-to-end type-safe validation — Zod (frontend) → Pydantic (backend) → SQLAlchemy ORM (database)
+- **Security middleware**: CORS, trusted host, GZip compression, custom security headers (HSTS, X-Frame-Options)
+- **Rate limiting**: Per-endpoint limits via SlowAPI (e.g. 10/min on writes, 30/min on reads)
+- **Caching**: Redis-backed response caching with pattern-based invalidation on writes
+- **Async tasks**: Celery + Redis broker for background jobs — weekly report generation, scheduled triggers, cleanup
+- **Logging**: Centralized structured logging — tracks validation errors, HTTP exceptions, and startup connection health (DB, Redis, Celery)
+- **Migrations**: Alembic-managed, version-controlled schema history
+- **Code quality**: Enforced via Ruff (backend) and ESLint + Prettier (frontend)
+- **Testing**: 348 Pytest tests covering routers, services, and business logic
 
-Each end-of-shift log is stored as a SQLAlchemy model in RDS PostgreSQL and contains the project reference, submitting Project Manager, reporting date, workers present with hours worked, materials consumed with quantities and unit costs, equipment deployed, weather conditions, work accomplished, incident reports, and submission timestamps. Project Managers submit attendance on behalf of their assigned workers during end-of-shift logging. Site Workers can view their own attendance history but do not submit attendance directly. Alembic manages all schema versioning for logs, attendance records, equipment usage, and material tracking tables.
+---
 
-### File Storage
+## Local Setup
 
-Project Managers upload supporting documentation for daily logs including progress photos, material delivery receipts, inspection documents, and incident evidence. Allowed file types are JPEG, PNG, WebP, and PDF. Files are rejected if they exceed 10MB. Files are stored as objects in AWS S3 via boto3, keeping binary data entirely outside the relational database. PostgreSQL stores only metadata such as filename, upload date, associated log reference, file type, and S3 object key through SQLAlchemy models. Alembic manages schema migrations for file and photo metadata tables.
+### Prerequisites
+- Docker & Docker Compose
+- Bun (or Node.js) for the frontend
 
-### Background Report Generation
+### Backend
 
-When a weekly progress report is requested — either manually by a Project Manager or automatically every Monday through Celery Beat — the FastAPI API submits a report-generation task to a Celery worker using Redis as the message broker so the request can return immediately. The worker aggregates all project activity for the reporting period, including workforce statistics, labor hours, material costs, equipment utilization, incidents, and completed work summaries. A structured PDF report is generated, uploaded to AWS S3, and the report metadata is written back to PostgreSQL upon completion. Owners and Project Managers can access historical reports through signed URL endpoints.
-
-### AI Query Layer — RAG
-
-When an Owner submits a natural language question such as "Which project consumed the most cement this month?", "Which site had the most incidents this quarter?", or "Which phase is currently most over budget?", the FastAPI endpoint forwards the request to a Celery worker through Redis. The worker retrieves relevant structured context from PostgreSQL including project budgets, attendance records, material consumption logs, daily reports, incident records, and generated reports. The worker assembles the final prompt and calls the LLM to generate a direct, data-grounded answer. Queries and responses are stored per user for historical reference.
-
-### ML Analytics & Predictive Insights
-
-SiteSync runs a dedicated ML pipeline that trains predictive models on accumulated project data, serving the Owner exclusively. A budget overrun classifier, delay risk scorer, and material demand forecaster are trained on historical logs, attendance, material consumption, and budget actuals from RDS PostgreSQL — retrained automatically every week via Celery Beat. Predictive insights are served via dedicated ML endpoints — budget overrun probability, delay risk score, and material cost forecast — accessible exclusively by the Owner through a dedicated Analytics page in the frontend. This page is separate from the operational Dashboard and historical Reports, giving leadership a focused forward-looking view of project risk and material demand.
-
-### Caching
-
-Redis stores frequently accessed responses including project lists, dashboard KPIs, attendance summaries, material consumption statistics, budget reports, and AI query metadata. Cached responses use TTL expiration together with mutation-based invalidation strategies.
-
-Weekly report generation is deduplicated at the database and cache level — a report already generated for a project's current week is detected before any new PDF is built, so multiple Owners or Project Managers requesting the same weekly report are served the same generated file instead of triggering duplicate Celery jobs or duplicate S3 uploads. Report existence checks follow a cache-first read pattern: a cache hit answers the request without touching PostgreSQL at all, a cache miss falls through to the database and the result is written back to cache for subsequent requests, keeping repeated checks from hitting the database every time. Report list responses follow the same cache-first pattern and are invalidated immediately once a new report finishes generating, ensuring the next fetch reflects the latest report without a stale read while still avoiding unnecessary database load between mutations.
-
-React Query manages client-side cache synchronization, ensuring stale data is automatically revalidated after any project update, assignment change, daily log submission, attendance update, or report generation event without requiring manual refreshes.
-
-### Dashboard & KPIs
-
-The Owner dashboard provides organization-wide visibility across all active projects, displaying total active projects, budget versus actual spending, workforce activity, project health indicators, over-budget alerts, schedule delays, and company-wide material consumption trends. The Project Manager dashboard focuses on assigned projects and displays daily log completion status, budget utilization by phase, attendance rates, material usage trends, incident tracking, and project productivity metrics. All KPI data is Redis-cached and automatically invalidated whenever new site activity is recorded.
-
-### Storage & Hosting
-
-FastAPI, the Celery worker, the Celery Beat scheduler, and Redis are each containerized as separate services and orchestrated locally through docker-compose during development. Celery Beat runs as its own dedicated container distinct from the worker, since Beat is solely responsible for triggering scheduled tasks on their configured cron intervals while the worker executes them — running both in a single process would risk duplicate task scheduling. The production environment runs on AWS EC2. Site photos, uploaded documents, and generated PDF reports are stored in AWS S3, while all relational data is stored in AWS RDS PostgreSQL. Redis serves both as the caching layer and Celery message broker. After load testing with Locust identifies single-instance bottlenecks under approximately 500 concurrent users, an AWS Application Load Balancer (ALB) is placed in front of multiple EC2 instances to provide horizontal scaling and high availability.
+1. Clone the repo and navigate into it
+```bash
+   git clone https://github.com/edrian-a-marinas/sitesync-api.git
+   cd sitesync-api
+```
+2. Copy the environment template and fill in your values
+```bash
+   cp .env.example .env
+```
+3. Start all services (API, PostgreSQL, Redis, Celery worker, Celery beat)
+```bash
+   docker compose up --build
+```
+4. Migrations run automatically on container start. API available at `http://localhost:8000/docs`
 
 ### Frontend
 
-Next.js with TypeScript handles routing, page rendering, and application layouts. TailwindCSS builds the responsive user interface. Zod validates all client-side inputs including project creation forms, attendance records, daily site logs, material consumption entries, equipment usage records, and user assignments before requests reach the backend. React Query manages asynchronous data fetching, caching, and server-state synchronization with the FastAPI backend.
+1. Clone the repo and navigate into it
+```bash
+   git clone https://github.com/edrian-a-marinas/sitesync-client.git
+   cd sitesync-client
+```
+2. Install dependencies
+```bash
+   bun install
+```
+3. Start the dev server
+```bash
+   bun run dev
+```
+4. App available at `http://localhost:5173`
 
-UI/UX for roles
-All three roles share the same UI shell — same sidebar, same navigation structure, same dashboard layout — but what each role sees inside it is gated by their role. The Owner sees all projects, the AI query panel, and the ML Analytics dashboard, the Project Manager sees only their assigned projects, and the The Site Worker sees only their assigned project, their own attendance history, and the daily log for their current shift — same interface, different world inside it. — same interface, different world inside it.
 
-### Role Based-Access Control 
+---
 
-Owner — the construction company owner/CEO. The person who runs the business, owns all projects, sees everything, uses the AI assistant to make decisions. Not necessarily technical — just the boss.
-Project Manager — in construction this is typically the Civil Engineer or Site Engineer or Site Manager or Foreman. They manage the full project lifecycle, submit daily logs, monitor budget vs actual, assign workers. Could also be a Foreman in smaller firms.
-Site Worker — the construction workers on the ground. Masons, carpenters, electricians, laborers. They just log attendance and see their daily tasks. No management access.
-
-### Owner & Project Manager Panel
-Owner and Project Manager share the same UI shell and sidebar. The backend enforces data scoping per role — Owners see all projects, Managers see only assigned ones. Analytics and AI Assistant are hidden from Project Managers since their backend endpoints are owner-only.
-
-| Menu | Description | Owner | Project Manager |
-|------|-------------|-------|-----------------|
-| **Dashboard** | KPIs scoped per role — budget, workforce, incidents, project health. | ✅ | ✅ |
-| **Projects** | Project and phase management. Managers get view-only on assigned projects. | ✅ | ✅ |
-| **Daily Logs** | Submit and manage daily site logs. | ✅ | ✅ |
-| **Reports** | Weekly PDF reports. Scoped per role. | ✅ | ✅ |
-| **Analytics** | ML predictions — budget overrun, delay risk, material forecast. | ✅ | ❌ |
-| **AI Assistant** | Natural language query interface for cross-project insights. | ✅ | ❌ |
-
-### Site Worker Panel
-Separate minimal UI — same design system, different shell and nav.
-
-| Menu | Description |
-|------|-------------|
-| **My Attendance** | View personal attendance history across assigned projects. |
-| **Daily Log** | View the current shift daily log for their assigned project. |
+*Built by Edrian Mariñas — 2026*
