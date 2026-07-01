@@ -36,7 +36,7 @@ async def upload_site_photo(
     log_id: int,
     request: Request,
     file: UploadFile = File(...),
-    current_user: User = Depends(require_owner_or_manager),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
