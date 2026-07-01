@@ -17,6 +17,9 @@ class User(Base):
     last_name: Mapped[str] = mapped_column(String, nullable=False)
     phone_number: Mapped[str | None] = mapped_column(String, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )  # DEMO FEATURE: remove this line if demo mode is retired
     created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
