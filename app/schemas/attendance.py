@@ -22,3 +22,10 @@ class AttendanceHistoryResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AttendanceHistoryListResponse(BaseModel):
+    items: list[AttendanceHistoryResponse]
+    total: int
+    page: int
+    limit: int
