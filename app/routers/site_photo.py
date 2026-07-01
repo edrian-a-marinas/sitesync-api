@@ -1,6 +1,8 @@
+import io
 import logging
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, require_owner_or_manager
@@ -8,13 +10,39 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.site_photo import SitePhotoResponse
+from app.services.s3 import get_file_bytes
 from app.services.site_photo import delete_site_photo as _delete_site_photo
+from app.services.site_photo import get_site_photo_for_download
 from app.services.site_photo import get_site_photos as _get_site_photos
 from app.services.site_photo import upload_site_photo as _upload_site_photo
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/daily-logs/{log_id}/site-photos", tags=["Site Photos"])
+
+
+@router.get("/{photo_id}/download")
+@limiter.limit("30/minute")
+async def download_site_photo(
+    project_id: int,
+    log_id: int,
+    photo_id: int,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    photo = await get_site_photo_for_download(project_id, log_id, photo_id, current_user, db)
+    if photo is False:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not assigned to this project")
+    if photo is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Photo not found")
+    file_bytes = get_file_bytes(photo.s3_key)
+    filename = photo.filename
+    return StreamingResponse(
+        io.BytesIO(file_bytes),
+        media_type=photo.content_type,
+        headers={"Content-Disposition": f"inline; filename={filename}"},
+    )
 
 
 @router.get("", response_model=list[SitePhotoResponse])
