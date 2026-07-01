@@ -66,7 +66,7 @@ async def create_attendance(project_id: int, log_id: int, data: AttendanceCreate
     await delete_pattern(f"attendance:{project_id}:{log_id}:*")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
-    await delete_cache("dashboard:owner")
+    await delete_pattern("dashboard:owner:*")
     logger.info(f"ATTENDANCE | worker_id={data.worker_id} | log_id={log_id} | submitted_by={current_user.id} | status=success")
     return attendance
 

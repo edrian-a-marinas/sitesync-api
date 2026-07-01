@@ -147,6 +147,7 @@ async def assign_manager(project_id: int, data: AssignUserRequest, current_user:
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
+    await delete_pattern("projects:user:*")
     logger.info(f"ASSIGN_MANAGER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=success")
     return assignment
 
@@ -169,6 +170,8 @@ async def assign_worker(project_id: int, data: AssignUserRequest, current_user: 
     db.add(assignment)
     await db.commit()
     await db.refresh(assignment)
+    await delete_pattern("projects:user:*")
+    await delete_cache(f"worker:projects:{data.user_id}")
     logger.info(f"ASSIGN_WORKER | project_id={project_id} | user_id={data.user_id} | assigned_by={current_user.id} | status=success")
     return assignment
 
@@ -197,6 +200,8 @@ async def unassign_user(project_id: int, user_id: int, type: str, current_user: 
     await db.delete(assignment)
     await db.commit()
     await delete_pattern("projects:user:*")
+    if type == "worker":
+        await delete_cache(f"worker:projects:{user_id}")
     logger.info(f"{log_label} | project_id={project_id} | user_id={user_id} | by={current_user.id} | status=success")
     return True
 
@@ -209,6 +214,7 @@ async def create_phase(project_id: int, data: PhaseCreate, current_user: User, d
     db.add(phase)
     await db.commit()
     await db.refresh(phase)
+    await delete_cache(f"dashboard:manager:{project_id}")
     logger.info(f"PHASE_CREATE | project_id={project_id} | phase_id={phase.id} | created_by={current_user.id} | status=success")
     return phase
 
@@ -227,5 +233,6 @@ async def update_phase(project_id: int, phase_id: int, data: PhaseUpdate, curren
         setattr(phase, field, value)
     await db.commit()
     await db.refresh(phase)
+    await delete_cache(f"dashboard:manager:{project_id}")
     logger.info(f"PHASE_UPDATE | project_id={project_id} | phase_id={phase_id} | updated_by={current_user.id} | status=success")
     return phase

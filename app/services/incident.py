@@ -3,7 +3,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import delete_cache, get_cache, set_cache
+from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.models.incident import Incident
 from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -74,7 +74,7 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
     await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
-    await delete_cache("dashboard:owner")
+    await delete_pattern("dashboard:owner:*")
     logger.info(
         f"INCIDENT_CREATE | log_id={log_id} | incident_id={incident.id} | reported_by={current_user.id} | severity={data.severity} | status=success"
     )
@@ -99,7 +99,7 @@ async def update_incident(
     await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
-    await delete_cache("dashboard:owner")
+    await delete_pattern("dashboard:owner:*")
     logger.info(f"INCIDENT_UPDATE | log_id={log_id} | incident_id={incident_id} | updated_by={current_user.id} | status=success")
     return incident
 
@@ -118,6 +118,6 @@ async def delete_incident(project_id: int, log_id: int, incident_id: int, curren
     await delete_cache(f"incident:{project_id}:{log_id}")
     await delete_cache(f"dashboard:manager:{project_id}")
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
-    await delete_cache("dashboard:owner")
+    await delete_pattern("dashboard:owner:*")
     logger.info(f"INCIDENT_DELETE | log_id={log_id} | incident_id={incident_id} | deleted_by={current_user.id} | status=success")
     return True
