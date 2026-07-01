@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, require_owner_or_manager
 from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
-from app.schemas.attendance import AttendanceCreate, AttendanceHistoryResponse, AttendanceResponse
+from app.schemas.attendance import AttendanceCreate, AttendanceHistoryListResponse, AttendanceResponse
 from app.services.attendance import (
     create_attendance as _create_attendance,
 )
@@ -47,13 +47,13 @@ async def get_attendance(
     return await _get_attendance(project_id, log_id, current_user, db)
 
 
-@router.get("/attendance/me", response_model=list[AttendanceHistoryResponse])
+@router.get("/attendance/me", response_model=AttendanceHistoryListResponse)
 @limiter.limit("30/minute")
 async def get_my_attendance_history(
     project_id: int,
     request: Request,
-    page: int = 1,
-    limit: int = 20,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

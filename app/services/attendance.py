@@ -1,5 +1,6 @@
 import logging
 
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -99,17 +100,38 @@ async def get_attendance(project_id: int, log_id: int, current_user: User, db: A
     return attendance
 
 
-async def get_my_attendance_history(project_id: int, current_user: User, db: AsyncSession, page: int = 1, limit: int = 20) -> list[dict]:
+async def get_my_attendance_history(project_id: int, current_user: User, db: AsyncSession, page: int = 1, limit: int = 20) -> dict:
     offset = (page - 1) * limit
-    result = await db.execute(
+
+    cache_key = f"attendance:history:{current_user.id}:{project_id}:{page}:{limit}"
+    cached = await get_cache(cache_key)
+    if cached:
+        logger.info(f"ATTENDANCE_HISTORY | worker_id={current_user.id} | project_id={project_id} | page={page} | source=cache")
+        return cached
+
+    base_query = (
         select(Attendance, DailyLog.log_date)
         .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
         .where(DailyLog.project_id == project_id)
         .where(Attendance.worker_id == current_user.id)
-        .order_by(DailyLog.log_date.desc())
-        .offset(offset)
-        .limit(limit)
     )
+    count_query = (
+        select(func.count())
+        .select_from(Attendance)
+        .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+        .where(DailyLog.project_id == project_id)
+        .where(Attendance.worker_id == current_user.id)
+    )
+
+    total = (await db.execute(count_query)).scalar() or 0
+    result = await db.execute(base_query.order_by(DailyLog.log_date.desc()).offset(offset).limit(limit))
     rows = result.all()
-    logger.info(f"ATTENDANCE_HISTORY | worker_id={current_user.id} | project_id={project_id} | page={page} | limit={limit} | count={len(rows)}")
-    return [{"id": a.id, "daily_log_id": a.daily_log_id, "hours_worked": float(a.hours_worked), "log_date": str(log_date)} for a, log_date in rows]
+
+    items = [{"id": a.id, "daily_log_id": a.daily_log_id, "hours_worked": float(a.hours_worked), "log_date": str(log_date)} for a, log_date in rows]
+    response = {"items": items, "total": total, "page": page, "limit": limit}
+
+    await set_cache(cache_key, response, ttl=3600)
+    logger.info(
+        f"ATTENDANCE_HISTORY | worker_id={current_user.id} | project_id={project_id} | page={page} | total={total} | count={len(rows)} | source=db"
+    )
+    return response
