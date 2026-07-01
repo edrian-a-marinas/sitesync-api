@@ -46,6 +46,13 @@ def get_cache_label() -> str:
     return "PROD"
 
 
+def get_frontend_label() -> str:
+    url = settings.ALLOWED_ORIGINS
+    if "localhost" in url or "127.0.0.1" in url:
+        return "DEV"
+    return "PROD"
+
+
 async def check_connections() -> dict:
     results = {}
 
