@@ -33,6 +33,7 @@ class UserResponse(BaseModel):
     role_id: int
     is_active: bool
     has_assignments: bool = False
+    is_demo: bool = False  # DEMO FEATURE: remove this line if demo mode is retired
 
     class Config:
         from_attributes = True
