@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import patch
 
 import pytest_asyncio
@@ -6,6 +6,7 @@ from httpx import AsyncClient
 from kombu.exceptions import OperationalError
 from sqlalchemy import delete, select
 
+from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
@@ -130,10 +131,6 @@ class TestCreateAIQuery:
 # ---------------------------------------------------------------------------
 class TestGetAIQuery:
     async def test_stale_pending_query_auto_expires(self, owner_client: AsyncClient, seed_users, test_session_factory):
-        from datetime import datetime, timedelta, timezone
-
-        from app.core.settings import settings
-
         async with test_session_factory() as session:
             async with session.begin():
                 query = AIQuery(

@@ -1,13 +1,25 @@
-from datetime import date, timedelta
-from unittest.mock import patch
+from datetime import date, datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy import delete
 
 from app.core.cache import delete_cache
+from app.models.attendance import Attendance
+from app.models.daily_log import DailyLog
+from app.models.incident import Incident
+from app.models.material import Material
 from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
+from app.services.report import (
+    cleanup_old_reports_sync,
+    generate_report,
+    generate_report_sync,
+    get_report_for_download,
+    get_reports,
+    report_exists_today,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +122,6 @@ class TestTriggerReport:
                 session.add(project)
                 await session.flush()
                 week_start = date.today() - timedelta(days=7)
-                from datetime import datetime, timezone
 
                 session.add(
                     Report(
@@ -237,3 +248,302 @@ class TestGetReports:
         d = seed_report_data
         res = await unauth_client.get(report_url(d["project"].id))
         assert res.status_code == 401
+
+
+class TestReportExistsToday:
+    async def test_cache_hit_returns_true_without_db_query(self, seed_users, test_session_factory):
+        from app.core.cache import set_cache
+
+        today = date.today()
+        cache_key = f"report:exists:1:{seed_users['owner'].id}:{today}"
+        await set_cache(cache_key, True, ttl=86400)
+        async with test_session_factory() as session:
+            result = await report_exists_today(1, seed_users["owner"].id, session)
+        assert result is True
+
+    async def test_db_hit_sets_cache_and_returns_true(self, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            async with session.begin():
+                project = Project(
+                    owner_id=seed_users["owner"].id,
+                    name="Exists Today Isolated Project",
+                    location="Manila",
+                    total_budget=500_000,
+                    start_date=date(2026, 1, 1),
+                    target_end_date=date(2026, 12, 31),
+                    status="Active",
+                )
+                session.add(project)
+                await session.flush()
+                session.add(
+                    Report(
+                        project_id=project.id,
+                        generated_by=seed_users["owner"].id,
+                        week_start=date.today() - timedelta(days=7),
+                        week_end=date.today(),
+                        s3_key="reports/exists_today_test.pdf",
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.flush()
+                project_id = project.id
+        async with test_session_factory() as session:
+            result = await report_exists_today(project_id, seed_users["owner"].id, session)
+        assert result is True
+
+
+# ---------------------------------------------------------------------------
+# generate_report (async — core report generation logic)
+# ---------------------------------------------------------------------------
+class TestGenerateReportAsync:
+    async def test_generates_report_with_aggregated_data(self, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            async with session.begin():
+                project = Project(
+                    owner_id=seed_users["owner"].id,
+                    name="Generate Report Project",
+                    location="Manila",
+                    total_budget=500_000,
+                    start_date=date(2026, 1, 1),
+                    target_end_date=date(2026, 12, 31),
+                    status="Active",
+                )
+                session.add(project)
+                await session.flush()
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date.today() - timedelta(days=1),
+                    work_accomplished="Poured foundation",
+                )
+                session.add(log)
+                await session.flush()
+                session.add(Attendance(daily_log_id=log.id, worker_id=seed_users["worker"].id, hours_worked=8.0))
+                session.add(Material(daily_log_id=log.id, name="Cement", quantity=10, unit="bags", unit_cost=250.0))
+                session.add(
+                    Incident(daily_log_id=log.id, reported_by=seed_users["owner"].id, description="Minor issue", severity="Low", status="Open")
+                )
+                await session.flush()
+                project_id = project.id
+        with (
+            patch("app.services.report.upload_file", return_value="reports/fake.pdf") as mock_upload,
+            patch("app.services.report.build_report_pdf", return_value=b"%PDF-fake"),
+        ):
+            async with test_session_factory() as session:
+                report = await generate_report(project_id, seed_users["owner"].id, session, source="manual")
+        assert report is not None
+        assert report.project_id == project_id
+        assert report.log_count == 1
+        assert report.incident_count == 1
+        assert report.open_incident_count == 1
+        assert float(report.total_hours) == 8.0
+        assert float(report.total_material_cost) == 2500.0
+        mock_upload.assert_called_once()
+
+    async def test_project_not_found_returns_none(self, seed_users, test_session_factory):
+
+        async with test_session_factory() as session:
+            result = await generate_report(999999, seed_users["owner"].id, session, source="manual")
+        assert result is None
+
+    async def test_exception_during_generation_returns_none(self, seed_users, test_session_factory, seed_report_data):
+
+        d = seed_report_data
+        with patch("app.services.report.upload_file", side_effect=Exception("s3 upload failed")):
+            async with test_session_factory() as session:
+                result = await generate_report(d["project"].id, seed_users["owner"].id, session, source="manual")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# generate_report_sync (Celery task version — sync db session)
+# ---------------------------------------------------------------------------
+class TestGenerateReportSync:
+    def test_generates_report_success(self):
+        mock_project = MagicMock()
+        mock_project.name = "Sync Test Project"
+        mock_project.id = 1
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = mock_project
+        db.execute.return_value.scalar.return_value = 10.0
+        db.execute.return_value.scalars.return_value.all.return_value = []
+        with (
+            patch("app.services.report.upload_file", return_value="reports/fake.pdf"),
+            patch("app.services.report.build_report_pdf", return_value=b"%PDF-fake"),
+        ):
+            report = generate_report_sync(1, None, db, source="scheduled")
+        assert report is not None
+        db.commit.assert_called_once()
+
+    def test_project_not_found_returns_none(self):
+
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = None
+        result = generate_report_sync(999999, None, db, source="scheduled")
+        assert result is None
+
+    def test_unique_constraint_violation_returns_none_silently(self):
+        mock_project = MagicMock()
+        mock_project.name = "Sync Test Project"
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = mock_project
+        db.execute.return_value.scalar.return_value = 0.0
+        db.execute.return_value.scalars.return_value.all.return_value = []
+        db.commit.side_effect = Exception("duplicate key value violates unique constraint uq_report_project_week")
+        with (
+            patch("app.services.report.upload_file", return_value="reports/fake.pdf"),
+            patch("app.services.report.build_report_pdf", return_value=b"%PDF-fake"),
+        ):
+            result = generate_report_sync(1, None, db, source="scheduled")
+        assert result is None
+
+    def test_generic_exception_returns_none(self):
+        mock_project = MagicMock()
+        mock_project.name = "Sync Test Project"
+        db = MagicMock()
+        db.execute.return_value.scalar_one_or_none.return_value = mock_project
+        db.execute.return_value.scalar.return_value = 0.0
+        db.execute.return_value.scalars.return_value.all.return_value = []
+        db.commit.side_effect = Exception("connection lost")
+        with (
+            patch("app.services.report.upload_file", return_value="reports/fake.pdf"),
+            patch("app.services.report.build_report_pdf", return_value=b"%PDF-fake"),
+        ):
+            result = generate_report_sync(1, None, db, source="scheduled")
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_report_for_download (role-scoped download access)
+# ---------------------------------------------------------------------------
+class TestGetReportForDownload:
+    async def test_owner_can_get_any_report(self, seed_users, seed_report_data, test_session_factory):
+
+        d = seed_report_data
+        async with test_session_factory() as session:
+            async with session.begin():
+                report = Report(
+                    project_id=d["project"].id,
+                    generated_by=seed_users["manager"].id,
+                    week_start=date(2026, 4, 1),
+                    week_end=date(2026, 4, 7),
+                    s3_key="reports/dl_test.pdf",
+                )
+                session.add(report)
+                await session.flush()
+                report_id = report.id
+        async with test_session_factory() as session:
+            result = await get_report_for_download(d["project"].id, report_id, seed_users["owner"], session)
+        assert result is not None
+        assert result.id == report_id
+
+    async def test_pm_can_get_own_report(self, seed_users, seed_report_data, test_session_factory):
+        d = seed_report_data
+        async with test_session_factory() as session:
+            async with session.begin():
+                report = Report(
+                    project_id=d["assigned_project"].id,
+                    generated_by=seed_users["manager"].id,
+                    week_start=date(2026, 4, 8),
+                    week_end=date(2026, 4, 14),
+                    s3_key="reports/dl_test2.pdf",
+                )
+                session.add(report)
+                await session.flush()
+                report_id = report.id
+        async with test_session_factory() as session:
+            result = await get_report_for_download(d["assigned_project"].id, report_id, seed_users["manager"], session)
+        assert result is not None
+
+    async def test_pm_cannot_get_other_users_report(self, seed_users, seed_report_data, test_session_factory):
+        d = seed_report_data
+        async with test_session_factory() as session:
+            async with session.begin():
+                report = Report(
+                    project_id=d["assigned_project"].id,
+                    generated_by=seed_users["owner"].id,
+                    week_start=date(2026, 4, 15),
+                    week_end=date(2026, 4, 21),
+                    s3_key="reports/dl_test3.pdf",
+                )
+                session.add(report)
+                await session.flush()
+                report_id = report.id
+        async with test_session_factory() as session:
+            result = await get_report_for_download(d["assigned_project"].id, report_id, seed_users["manager"], session)
+        assert result is None
+
+    async def test_pm_can_get_scheduled_report(self, seed_users, seed_report_data, test_session_factory):
+
+        d = seed_report_data
+        async with test_session_factory() as session:
+            async with session.begin():
+                report = Report(
+                    project_id=d["assigned_project"].id,
+                    generated_by=None,
+                    week_start=date(2026, 4, 22),
+                    week_end=date(2026, 4, 28),
+                    s3_key="reports/dl_test4.pdf",
+                )
+                session.add(report)
+                await session.flush()
+                report_id = report.id
+        async with test_session_factory() as session:
+            result = await get_report_for_download(d["assigned_project"].id, report_id, seed_users["manager"], session)
+        assert result is not None
+
+
+# ---------------------------------------------------------------------------
+# cleanup_old_reports_sync (deletes reports older than 14 days)
+# ---------------------------------------------------------------------------
+class TestCleanupOldReportsSync:
+    def test_deletes_old_reports(self):
+        old_report = MagicMock()
+        old_report.id = 1
+        old_report.project_id = 1
+        old_report.s3_key = "reports/old.pdf"
+        db = MagicMock()
+        db.execute.return_value.scalars.return_value.all.return_value = [old_report]
+        with patch("app.services.report.delete_file") as mock_delete:
+            count = cleanup_old_reports_sync(db)
+        assert count == 1
+        mock_delete.assert_called_once_with("reports/old.pdf")
+        db.delete.assert_called_once_with(old_report)
+
+    def test_delete_failure_rolls_back_and_continues(self):
+        old_report = MagicMock()
+        old_report.id = 1
+        old_report.project_id = 1
+        old_report.s3_key = "reports/old.pdf"
+        db = MagicMock()
+        db.execute.return_value.scalars.return_value.all.return_value = [old_report]
+        with patch("app.services.report.delete_file", side_effect=Exception("s3 error")):
+            count = cleanup_old_reports_sync(db)
+        assert count == 0
+        db.rollback.assert_called_once()
+
+    def test_no_old_reports_returns_zero(self):
+        db = MagicMock()
+        db.execute.return_value.scalars.return_value.all.return_value = []
+        count = cleanup_old_reports_sync(db)
+        assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# get_reports (exception branch)
+# ---------------------------------------------------------------------------
+class TestGetReportsException:
+    async def test_db_error_returns_empty_result(self, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            original_execute = session.execute
+            call_count = {"n": 0}
+
+            async def flaky_execute(*args, **kwargs):
+                call_count["n"] += 1
+                if call_count["n"] == 1:
+                    return await original_execute(*args, **kwargs)
+                raise Exception("db connection lost")
+
+            with patch.object(session, "execute", AsyncMock(side_effect=flaky_execute)):
+                result = await get_reports(1, session, page=1, page_size=20, current_user=seed_users["owner"])
+        assert result == {"items": [], "total": 0, "page": 1, "page_size": 20}

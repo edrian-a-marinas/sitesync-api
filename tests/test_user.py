@@ -1,4 +1,5 @@
 from datetime import date
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest_asyncio
 from httpx import AsyncClient
@@ -7,6 +8,8 @@ from sqlalchemy import delete
 from app.core.security import hash_password
 from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.user import User
+from app.schemas.auth import PasswordResetRequest
+from app.services.user import reset_password
 
 # ---------------------------------------------------------------------------
 # Session-scoped seeds
@@ -406,6 +409,13 @@ class TestChangePassword:
 # PATCH /api/v1/users/{user_id}/password/reset
 # ---------------------------------------------------------------------------
 class TestResetPassword:
+    async def test_current_user_with_invalid_role_is_forbidden(self, seed_users, seed_user_extras, test_session_factory):
+        current_user = MagicMock(id=999999, role_id=99999)
+        target_user = seed_user_extras["owner_created_worker"]
+        async with test_session_factory() as session:
+            result = await reset_password(target_user.id, PasswordResetRequest(new_password="whatever123"), current_user, session)
+        assert result is None
+
     async def test_owner_can_reset_manager_password(self, owner_client: AsyncClient, seed_users):
         res = await owner_client.patch(
             f"/api/v1/users/{seed_users['manager'].id}/password/reset",
@@ -514,3 +524,104 @@ class TestSelfDeactivate:
     async def test_manager_cannot_reactivate_self_while_active(self, manager_client: AsyncClient, seed_users):
         res = await manager_client.patch(f"/api/v1/users/{seed_users['manager'].id}/activate")
         assert res.status_code == 403
+
+    async def test_worker_cannot_self_deactivate(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.patch(f"/api/v1/users/{seed_users['worker'].id}/deactivate")
+        assert res.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/users — search + scope=mine
+# ---------------------------------------------------------------------------
+class TestListUsersSearchAndScope:
+    async def test_owner_search_by_name(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.get("/api/v1/users", params={"search": "Owner"})
+        assert res.status_code == 200
+        emails = [u["email"] for u in res.json()["items"]]
+        assert "owner@test.com" in emails
+
+    async def test_owner_search_by_email(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.get("/api/v1/users", params={"search": "worker@test.com"})
+        assert res.status_code == 200
+        emails = [u["email"] for u in res.json()["items"]]
+        assert "worker@test.com" in emails
+
+    async def test_owner_search_no_match_returns_empty(self, owner_client: AsyncClient):
+        res = await owner_client.get("/api/v1/users", params={"search": "zzznomatchzzz"})
+        assert res.status_code == 200
+        assert res.json()["items"] == []
+
+    async def test_manager_scope_mine_returns_shared_workers_only(self, manager_client: AsyncClient, seed_user_project, seed_user_extras):
+        res = await manager_client.get("/api/v1/users", params={"scope": "mine"})
+        assert res.status_code == 200
+        emails = [u["email"] for u in res.json()["items"]]
+        assert "worker@test.com" in emails
+        assert "owner_created_worker@test.com" not in emails
+
+    async def test_manager_scope_all_returns_every_worker(self, manager_client: AsyncClient, seed_user_extras):
+        res = await manager_client.get("/api/v1/users", params={"scope": "all"})
+        assert res.status_code == 200
+        emails = [u["email"] for u in res.json()["items"]]
+        assert "owner_created_worker@test.com" in emails
+
+    async def test_cached_result_is_returned_on_second_call(self, owner_client: AsyncClient, seed_users):
+        res1 = await owner_client.get("/api/v1/users", params={"page": 1, "page_size": 5})
+        assert res1.status_code == 200
+        res2 = await owner_client.get("/api/v1/users", params={"page": 1, "page_size": 5})
+        assert res2.status_code == 200
+        assert res1.json() == res2.json()
+
+
+# ---------------------------------------------------------------------------
+# GET /api/v1/users/{user_id}/assignments
+# ---------------------------------------------------------------------------
+class TestGetUserAssignments:
+    async def test_target_user_with_invalid_role_returns_empty_list(self, seed_users, test_session_factory):
+        from app.services.user import get_user_assignments
+
+        # target_user exists but its role_id no longer resolves to a Role (simulated via mock)
+        target_user = MagicMock(role_id=99999)
+        mock_session = MagicMock()
+        mock_execute_user = MagicMock()
+        mock_execute_user.scalar_one_or_none.return_value = target_user
+        mock_execute_role = MagicMock()
+        mock_execute_role.scalar_one_or_none.return_value = None
+        mock_session.execute = AsyncMock(side_effect=[mock_execute_user, mock_execute_role])
+        result = await get_user_assignments(1, seed_users["owner"], mock_session)
+        assert result == []
+
+    async def test_owner_gets_manager_assignments(self, owner_client: AsyncClient, seed_users, seed_user_project):
+        res = await owner_client.get(f"/api/v1/users/{seed_users['manager'].id}/assignments")
+        assert res.status_code == 200
+        names = [a["name"] for a in res.json()]
+        assert "User Test Project" in names
+        assert res.json()[0]["role"] == "Project Manager"
+
+    async def test_owner_gets_worker_assignments(self, owner_client: AsyncClient, seed_users, seed_user_project):
+        res = await owner_client.get(f"/api/v1/users/{seed_users['worker'].id}/assignments")
+        assert res.status_code == 200
+        names = [a["name"] for a in res.json()]
+        assert "User Test Project" in names
+        assert res.json()[0]["role"] == "Site Worker"
+
+    async def test_owner_gets_empty_assignments_for_unassigned_user(self, owner_client: AsyncClient, seed_user_extras):
+        res = await owner_client.get(f"/api/v1/users/{seed_user_extras['owner_created_worker'].id}/assignments")
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_nonexistent_user_returns_empty_list(self, owner_client: AsyncClient):
+        res = await owner_client.get("/api/v1/users/99999/assignments")
+        assert res.status_code == 200
+        assert res.json() == []
+
+    async def test_manager_can_get_assignments(self, manager_client: AsyncClient, seed_users, seed_user_project):
+        res = await manager_client.get(f"/api/v1/users/{seed_users['worker'].id}/assignments")
+        assert res.status_code == 200
+
+    async def test_site_worker_forbidden(self, worker_client: AsyncClient, seed_users):
+        res = await worker_client.get(f"/api/v1/users/{seed_users['owner'].id}/assignments")
+        assert res.status_code == 403
+
+    async def test_unauthenticated(self, unauth_client: AsyncClient):
+        res = await unauth_client.get("/api/v1/users/1/assignments")
+        assert res.status_code == 401
