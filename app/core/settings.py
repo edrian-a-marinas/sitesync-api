@@ -61,6 +61,7 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        extra = "ignore"  # allows infra-only .env vars (e.g. docker-compose) not used by the app
 
 
 settings = Settings()
