@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Sequence, Union
 from alembic import op
 from sqlalchemy.orm import Session
+from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.report import Report
 
@@ -100,7 +101,9 @@ def _backfill_one_week(session: Session, project_id: int, week_start: date, week
         open_incident_count=len([i for i in incidents if i.status == "Open"]),
     )
     filename = f"reports/report_{project_id}_{week_start}.pdf"
-    upload_file(pdf_bytes, filename, "application/pdf")
+    # Skip real S3 upload when AWS isn't configured (e.g. local/demo setups) — report row is still seeded
+    if settings.AWS_ACCESS_KEY_ID and settings.AWS_S3_BUCKET:
+        upload_file(pdf_bytes, filename, "application/pdf")
     report = Report(
         project_id=project_id,
         generated_by=project.owner_id,
