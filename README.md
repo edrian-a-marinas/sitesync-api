@@ -73,50 +73,50 @@ flowchart LR
 
 1. Clone the repo and navigate into it
 ```bash
-   git clone https://github.com/edrian-a-marinas/sitesync-api.git
-   cd sitesync-api
+git clone https://github.com/edrian-a-marinas/sitesync-api.git
+cd sitesync-api
 ```
 2. Copy the environment template and fill in your values
 ```bash
-   cp .env.example .env
+cp .env.example .env
 ```
 
 #### Option 1 — Docker (recommended)
 
 Start all services (API, PostgreSQL, Redis, Celery worker, Celery beat)
 ```bash
-   docker compose up --build
+docker compose up --build
 ```
 Migrations run automatically on container start. API available at `http://localhost:8000/docs`
 
 #### Option 2 — Local Python environment
 Useful for active development with live reload.
 ```bash
-   python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
-   pip install -r requirements.txt
-   alembic upgrade head
-   uvicorn app.main:app --reload
+python -m venv venv && source venv/bin/activate   # venv\Scripts\activate on Windows
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 Run Celery worker and beat in separate terminals (same venv):
 ```bash
-   celery -A app.core.celery.celery_app worker --loglevel=info
-   celery -A app.core.celery.celery_app beat --loglevel=info
+celery -A app.core.celery.celery_app worker --loglevel=info
+celery -A app.core.celery.celery_app beat --loglevel=info
 ```
 
 ### Frontend
 
 1. Clone the repo and navigate into it
 ```bash
-   git clone https://github.com/edrian-a-marinas/sitesync-client.git
-   cd sitesync-client
+git clone https://github.com/edrian-a-marinas/sitesync-client.git
+cd sitesync-client
 ```
 2. Install dependencies
 ```bash
-   bun install
+bun install
 ```
 3. Start the dev server
 ```bash
-   bun run dev
+bun run dev
 ```
 4. App available at `http://localhost:5173`
 
