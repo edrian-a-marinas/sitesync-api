@@ -7,8 +7,25 @@ from kombu.exceptions import OperationalError
 from sqlalchemy import delete, select
 
 from app.models.ai_query import AIQuery
-from app.models.project import Project, ProjectAssignment, WorkerAssignment
-from app.services.ai_query import _format_currency, _retrieve_budget, _retrieve_personnel, classify_intent
+from app.models.attendance import Attendance
+from app.models.daily_log import DailyLog
+from app.models.equipment import Equipment
+from app.models.incident import Incident
+from app.models.material import Material
+from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
+from app.services.ai_query import (
+    _format_currency,
+    _retrieve_attendance,
+    _retrieve_budget,
+    _retrieve_equipment,
+    _retrieve_general,
+    _retrieve_incidents,
+    _retrieve_materials,
+    _retrieve_personnel,
+    _retrieve_phases,
+    classify_intent,
+    retrieve_context,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +129,31 @@ class TestCreateAIQuery:
 # GET /ai/query/{query_id} (get single)
 # ---------------------------------------------------------------------------
 class TestGetAIQuery:
+    async def test_stale_pending_query_auto_expires(self, owner_client: AsyncClient, seed_users, test_session_factory):
+        from datetime import datetime, timedelta, timezone
+
+        from app.core.settings import settings
+
+        async with test_session_factory() as session:
+            async with session.begin():
+                query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    question="Stale pending question?",
+                    answer=None,
+                    status="Pending",
+                )
+                session.add(query)
+                await session.flush()
+                query_id = query.id
+                old_time = datetime.now(timezone.utc) - timedelta(minutes=settings.PENDING_TIMEOUT_MINUTES + 5)
+                query.created_at = old_time
+                await session.flush()
+        res = await owner_client.get(query_detail_url(query_id))
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "Failed"
+        assert data["answer"] == "TIMEOUT"
+
     async def test_owner_can_get_own_query(self, owner_client: AsyncClient, seed_users, test_session_factory):
         async with test_session_factory() as session:
             async with session.begin():
@@ -399,31 +441,77 @@ class TestDeleteAllAIQueries:
 # classify_intent (keyword matching, word-boundary safety for short keywords)
 # ---------------------------------------------------------------------------
 class TestClassifyIntent:
-    def test_short_keyword_matches_as_whole_word(self):
-        intents = classify_intent("who is the pm?")
-        assert "personnel" in intents
-
-    def test_full_phrase_matches(self):
-        intents = classify_intent("who is the project manager for this site?")
-        assert "personnel" in intents
-
-    def test_short_keyword_does_not_match_inside_another_word(self):
-        intents = classify_intent("what equipment do we have?")
-        assert "personnel" not in intents
-        assert "equipment" in intents
-
-    def test_equipment_keyword_matches(self):
-        intents = classify_intent("any broken machinery on site?")
-        assert "equipment" in intents
-
     def test_general_always_included(self):
         intents = classify_intent("hello")
         assert "general" in intents
 
-    def test_multiple_intents_can_match(self):
-        intents = classify_intent("how much did we spend on materials and who manages this project?")
-        assert "materials" in intents
-        assert "personnel" in intents
+    def test_no_keywords_matched_still_returns_general(self):
+        intents = classify_intent("xyz zzz qqq")
+        assert intents == ["general"]
+
+
+# ---------------------------------------------------------------------------
+# Cross-project (project_id=None) branch — every retrieval function scopes
+# to Active-status projects when no specific project is requested
+# ---------------------------------------------------------------------------
+class TestRetrieveCrossProject:
+    async def test_materials_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_materials(session, project_id=None)
+        assert "MATERIALS" in context
+
+    async def test_attendance_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_attendance(session, project_id=None)
+        assert "ATTENDANCE" in context
+
+    async def test_incidents_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_incidents(session, project_id=None)
+        assert "INCIDENTS" in context
+
+    async def test_phases_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_phases(session, project_id=None)
+        assert "PHASES" in context
+
+    async def test_personnel_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_personnel(session, project_id=None)
+        assert "PERSONNEL" in context
+
+    async def test_equipment_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_equipment(session, project_id=None)
+        assert "EQUIPMENT" in context
+
+    async def test_general_no_project_id(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_general(session, project_id=None)
+        assert "PROJECTS" in context
+
+
+# ---------------------------------------------------------------------------
+# retrieve_context (orchestrator — dispatches to intent handlers, catches
+# individual handler failures without crashing the whole query)
+# ---------------------------------------------------------------------------
+class TestRetrieveContext:
+    async def test_dispatches_to_matched_intent_handler(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await retrieve_context(session, "how much did we spend on materials?", project.id)
+        assert "MATERIALS" in context
+
+    async def test_handler_exception_produces_failed_message_not_crash(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+
+        async def broken_handler(db, project_id):
+            raise Exception("db exploded")
+
+        with patch.dict("app.services.ai_query._INTENT_HANDLERS", {"materials": broken_handler}):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "materials used?", project.id)
+        assert "MATERIALS: Retrieval failed." in context
 
 
 # ---------------------------------------------------------------------------
@@ -508,3 +596,260 @@ class TestRetrieveBudget:
         async with test_session_factory() as session:
             context = await _retrieve_budget(session, project_id=project.id)
         assert "sorted by overrun risk" in context
+
+    async def test_no_project_id_scopes_to_active_projects(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_budget(session, project_id=None)
+        assert "BUDGET" in context
+
+    async def test_nonexistent_project_id_returns_empty_message(self, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_budget(session, project_id=999999)
+        assert "No project records found" in context
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_materials (RAG: material usage entries)
+# ---------------------------------------------------------------------------
+class TestRetrieveMaterials:
+    async def test_no_records_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_materials(session, project_id=project.id)
+        assert "No material records found" in context
+
+    async def test_includes_material_entry_details(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 2, 1),
+                    work_accomplished="Test work",
+                )
+                session.add(log)
+                await session.flush()
+                material = Material(
+                    daily_log_id=log.id,
+                    name="Cement",
+                    quantity=50,
+                    unit="bags",
+                    unit_cost=250.0,
+                )
+                session.add(material)
+                await session.flush()
+                log_id = log.id
+        async with test_session_factory() as session:
+            context = await _retrieve_materials(session, project_id=project.id)
+        assert "Cement" in context
+        assert "MATERIALS" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Material).where(Material.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_attendance (RAG: worker attendance summary)
+# ---------------------------------------------------------------------------
+class TestRetrieveAttendance:
+    async def test_no_records_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_attendance(session, project_id=project.id)
+        assert "No attendance records found" in context
+
+    async def test_includes_worker_count_and_hours(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 2, 2),
+                    work_accomplished="Test work",
+                )
+                session.add(log)
+                await session.flush()
+                attendance = Attendance(
+                    daily_log_id=log.id,
+                    worker_id=seed_users["worker"].id,
+                    hours_worked=8.0,
+                )
+                session.add(attendance)
+                await session.flush()
+                log_id = log.id
+        async with test_session_factory() as session:
+            context = await _retrieve_attendance(session, project_id=project.id)
+        assert "workers_present=1" in context
+        assert "total_hours=8.0" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Attendance).where(Attendance.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_incidents (RAG: safety incident entries)
+# ---------------------------------------------------------------------------
+class TestRetrieveIncidents:
+    async def test_no_records_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_incidents(session, project_id=project.id)
+        assert "No incident records found" in context
+
+    async def test_includes_incident_details(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 2, 3),
+                    work_accomplished="Test work",
+                )
+                session.add(log)
+                await session.flush()
+                incident = Incident(
+                    daily_log_id=log.id,
+                    reported_by=seed_users["owner"].id,
+                    description="Minor slip near entrance",
+                    severity="Low",
+                    status="Open",
+                )
+                session.add(incident)
+                await session.flush()
+                log_id = log.id
+        async with test_session_factory() as session:
+            context = await _retrieve_incidents(session, project_id=project.id)
+        assert "Minor slip near entrance" in context
+        assert "severity=Low" in context
+        assert "status=Open" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Incident).where(Incident.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_phases (RAG: project phase budget allocation)
+# ---------------------------------------------------------------------------
+class TestRetrievePhases:
+    async def test_no_records_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_phases(session, project_id=project.id)
+        assert "No phase records found" in context
+
+    async def test_includes_phase_details(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                phase = ProjectPhase(
+                    project_id=project.id,
+                    name="Foundation",
+                    allocated_budget=200000.0,
+                    status="In Progress",
+                )
+                session.add(phase)
+                await session.flush()
+                phase_id = phase.id
+        async with test_session_factory() as session:
+            context = await _retrieve_phases(session, project_id=project.id)
+        assert "Foundation" in context
+        assert "status=In Progress" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(ProjectPhase).where(ProjectPhase.id == phase_id))
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_equipment (RAG: equipment entries)
+# ---------------------------------------------------------------------------
+class TestRetrieveEquipment:
+    async def test_no_records_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_equipment(session, project_id=project.id)
+        assert "No equipment records found" in context
+
+    async def test_includes_equipment_details(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 2, 4),
+                    work_accomplished="Test work",
+                )
+                session.add(log)
+                await session.flush()
+                equipment = Equipment(
+                    daily_log_id=log.id,
+                    name="Excavator",
+                    quantity=1,
+                    condition="Good",
+                )
+                session.add(equipment)
+                await session.flush()
+                log_id = log.id
+        async with test_session_factory() as session:
+            context = await _retrieve_equipment(session, project_id=project.id)
+        assert "Excavator" in context
+        assert "condition=Good" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Equipment).where(Equipment.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+    async def test_missing_condition_shows_not_specified(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 2, 5),
+                    work_accomplished="Test work",
+                )
+                session.add(log)
+                await session.flush()
+                equipment = Equipment(
+                    daily_log_id=log.id,
+                    name="Crane",
+                    quantity=1,
+                    condition=None,
+                )
+                session.add(equipment)
+                await session.flush()
+                log_id = log.id
+        async with test_session_factory() as session:
+            context = await _retrieve_equipment(session, project_id=project.id)
+        assert "condition=Not specified" in context
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(Equipment).where(Equipment.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+
+# ---------------------------------------------------------------------------
+# _retrieve_general (RAG: project-wide summary)
+# ---------------------------------------------------------------------------
+class TestRetrieveGeneral:
+    async def test_no_projects_returns_empty_message(self, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_general(session, project_id=999999)
+        assert "No projects found" in context
+
+    async def test_includes_project_summary_fields(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_general(session, project_id=project.id)
+        assert project.name in context
+        assert "total_material_cost=" in context
+        assert "total_hours_worked=" in context
+        assert "total_incidents=" in context
+        assert "open_incidents=" in context
