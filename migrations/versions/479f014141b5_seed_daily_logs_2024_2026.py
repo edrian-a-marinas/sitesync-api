@@ -137,19 +137,19 @@ def upgrade() -> None:
     projects = [
         {
             "name": "Sta. Mesa Mixed-Use Development",
-            "pm_email": "seed.project_manager@gmail.com",
+            "pm_email": "seed.project_manager@sitesync.com",
             "start": date(2024, 1, 8),
             "end": date(2026, 6, 30),
         },
         {
             "name": "Quezon Avenue Commercial Tower",
-            "pm_email": "seed.pm2@gmail.com",
+            "pm_email": "seed.pm2@sitesync.com",
             "start": date(2024, 6, 3),
             "end": date(2026, 6, 30),
         },
         {
             "name": "Pandacan Warehouse Complex",
-            "pm_email": "seed.project_manager@gmail.com",
+            "pm_email": "seed.project_manager@sitesync.com",
             "start": date(2024, 1, 8),
             "end": date(2025, 3, 31),
         },
