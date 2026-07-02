@@ -89,6 +89,13 @@ class TestProjectCreate:
 
 
 class TestProjectList:
+    async def test_cached_result_is_returned_on_second_call(self, owner_client: AsyncClient, seed_project_data):
+        res1 = await owner_client.get("/api/v1/projects")
+        assert res1.status_code == 200
+        res2 = await owner_client.get("/api/v1/projects")
+        assert res2.status_code == 200
+        assert res1.json() == res2.json()
+
     async def test_owner_sees_all(self, owner_client: AsyncClient, seed_project_data):
         res = await owner_client.get("/api/v1/projects")
         assert res.status_code == 200
@@ -106,6 +113,12 @@ class TestProjectList:
     async def test_unauthenticated(self, unauth_client: AsyncClient):
         res = await unauth_client.get("/api/v1/projects")
         assert res.status_code == 401
+
+    async def test_status_filter(self, owner_client: AsyncClient, seed_project_data):
+        res = await owner_client.get("/api/v1/projects", params={"status": "Active"})
+        assert res.status_code == 200
+        for p in res.json():
+            assert p["status"] == "Active"
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +205,36 @@ class TestAssignManager:
         )
         assert res.status_code == 400
 
+    async def test_assign_manager_project_not_found(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.post(
+            "/api/v1/projects/99999/assign-manager",
+            json={"user_id": seed_users["manager"].id},
+        )
+        assert res.status_code == 400
+
+    async def test_assign_worker_project_not_found(self, owner_client: AsyncClient, seed_users):
+        res = await owner_client.post(
+            "/api/v1/projects/99999/assign-worker",
+            json={"user_id": seed_users["worker"].id},
+        )
+        assert res.status_code == 400
+
+    async def test_assign_worker_non_worker_fails(self, owner_client: AsyncClient, seed_project_data, seed_users):
+        pid = seed_project_data["owner_project"].id
+        res = await owner_client.post(
+            f"/api/v1/projects/{pid}/assign-worker",
+            json={"user_id": seed_users["manager"].id},
+        )
+        assert res.status_code == 400
+
+    async def test_assign_worker_nonexistent_user_fails(self, owner_client: AsyncClient, seed_project_data):
+        pid = seed_project_data["owner_project"].id
+        res = await owner_client.post(
+            f"/api/v1/projects/{pid}/assign-worker",
+            json={"user_id": 99999},
+        )
+        assert res.status_code == 400
+
     async def test_unauthenticated(self, unauth_client: AsyncClient, seed_project_data, seed_users):
         pid = seed_project_data["owner_project"].id
         res = await unauth_client.post(
@@ -246,6 +289,28 @@ class TestPhases:
             json={"name": "Finishing", "allocated_budget": 200000.0, "status": "Not Started"},
         )
         assert res.status_code == 401
+
+    async def test_create_phase_project_not_found(self, owner_client: AsyncClient):
+        res = await owner_client.post(
+            "/api/v1/projects/99999/phases",
+            json={"name": "Foundation", "allocated_budget": 100000.0, "status": "Not Started"},
+        )
+        assert res.status_code == 404
+
+    async def test_update_phase_project_not_found(self, owner_client: AsyncClient):
+        res = await owner_client.patch(
+            "/api/v1/projects/99999/phases/1",
+            json={"status": "In Progress"},
+        )
+        assert res.status_code == 404
+
+    async def test_update_phase_not_found(self, owner_client: AsyncClient, seed_project_data):
+        pid = seed_project_data["owner_project"].id
+        res = await owner_client.patch(
+            f"/api/v1/projects/{pid}/phases/99999",
+            json={"status": "In Progress"},
+        )
+        assert res.status_code == 404
 
 
 # ---------------------------------------------------------------------------
