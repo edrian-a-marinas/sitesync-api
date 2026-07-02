@@ -22,10 +22,10 @@ def upgrade() -> None:
     op.execute(f"""
         INSERT INTO users (email, password_hash, first_name, last_name, role_id, is_active)
         VALUES
-        ('seed.owner@gmail.com', '{hash_password("test1234")}', 'Seed', 'Owner', 1, true),
-        ('seed.project_manager@gmail.com', '{hash_password("test1234")}', 'Seed', 'Manager', 2, true)
+        ('seed.owner@sitesync.com', '{hash_password("test1234")}', 'Seed', 'Owner', 1, true),
+        ('seed.project_manager@sitesync.com', '{hash_password("test1234")}', 'Seed', 'Manager', 2, true)
     """)
 
 
 def downgrade() -> None:
-    op.execute("DELETE FROM users WHERE email IN ('seed.owner@gmail.com', 'seed.project_manager@gmail.com')")
+    op.execute("DELETE FROM users WHERE email IN ('seed.owner@sitesync.com', 'seed.project_manager@sitesync.com')")

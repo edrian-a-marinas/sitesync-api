@@ -24,15 +24,15 @@ def upgrade() -> None:
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Davao Riverside Residences', 'Riverside, Davao City',
                64000000.00, '2024-09-02', '2026-12-31', 'Active'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Makati Avenue Office Retrofit', 'Makati Avenue, Makati City',
                41000000.00, '2025-02-10', '2026-12-31', 'Active'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Marikina Riverbank Flood Control', 'Marikina City',
                29500000.00, '2024-03-04', '2025-08-31', 'Completed'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
     """)
     op.execute("""
         INSERT INTO project_phases (project_id, name, allocated_budget, status)
@@ -67,29 +67,29 @@ def upgrade() -> None:
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Davao Riverside Residences'
-          AND u.email = 'seed.pm2@gmail.com';
+          AND u.email = 'seed.pm2@sitesync.com';
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Makati Avenue Office Retrofit'
-          AND u.email = 'seed.pm2@gmail.com';
+          AND u.email = 'seed.pm2@sitesync.com';
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Marikina Riverbank Flood Control'
-          AND u.email = 'seed.pm2@gmail.com';
+          AND u.email = 'seed.pm2@sitesync.com';
     """)
     op.execute("""
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Davao Riverside Residences'
-          AND u.email IN ('seed.worker1@gmail.com', 'seed.worker3@gmail.com');
+          AND u.email IN ('seed.worker1@sitesync.com', 'seed.worker3@sitesync.com');
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Makati Avenue Office Retrofit'
-          AND u.email IN ('seed.worker2@gmail.com', 'seed.worker4@gmail.com');
+          AND u.email IN ('seed.worker2@sitesync.com', 'seed.worker4@sitesync.com');
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Marikina Riverbank Flood Control'
-          AND u.email IN ('seed.worker2@gmail.com', 'seed.worker5@gmail.com');
+          AND u.email IN ('seed.worker2@sitesync.com', 'seed.worker5@sitesync.com');
     """)
 def downgrade() -> None:
     """Downgrade schema."""

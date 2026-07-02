@@ -100,19 +100,19 @@ def upgrade() -> None:
     projects = [
         {
             "name": "Davao Riverside Residences",
-            "pm_email": "seed.pm2@gmail.com",
+            "pm_email": "seed.pm2@sitesync.com",
             "start": date(2024, 9, 2),
             "end": date(2026, 6, 21),
         },
         {
             "name": "Makati Avenue Office Retrofit",
-            "pm_email": "seed.pm2@gmail.com",
+            "pm_email": "seed.pm2@sitesync.com",
             "start": date(2025, 2, 10),
             "end": date(2026, 6, 21),
         },
         {
             "name": "Marikina Riverbank Flood Control",
-            "pm_email": "seed.pm2@gmail.com",
+            "pm_email": "seed.pm2@sitesync.com",
             "start": date(2024, 3, 4),
             "end": date(2025, 8, 31),
         },

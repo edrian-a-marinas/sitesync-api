@@ -20,29 +20,29 @@ def upgrade() -> None:
     op.execute(f"""
         INSERT INTO users (email, password_hash, first_name, last_name, role_id, is_active)
         VALUES
-        ('seed.pm2@gmail.com',      '{pm2_hash}', 'Marco',   'Reyes',     2, true),
-        ('seed.worker1@gmail.com',  '{w_hash}',   'Jose',    'Santos',    3, true),
-        ('seed.worker2@gmail.com',  '{w_hash}',   'Ramon',   'Cruz',      3, true),
-        ('seed.worker3@gmail.com',  '{w_hash}',   'Andres',  'Lim',       3, true),
-        ('seed.worker4@gmail.com',  '{w_hash}',   'Eduardo', 'Garcia',    3, true),
-        ('seed.worker5@gmail.com',  '{w_hash}',   'Miguel',  'Dela Cruz', 3, true)
+        ('seed.pm2@sitesync.com',      '{pm2_hash}', 'Marco',   'Reyes',     2, true),
+        ('seed.worker1@sitesync.com',  '{w_hash}',   'Jose',    'Santos',    3, true),
+        ('seed.worker2@sitesync.com',  '{w_hash}',   'Ramon',   'Cruz',      3, true),
+        ('seed.worker3@sitesync.com',  '{w_hash}',   'Andres',  'Lim',       3, true),
+        ('seed.worker4@sitesync.com',  '{w_hash}',   'Eduardo', 'Garcia',    3, true),
+        ('seed.worker5@sitesync.com',  '{w_hash}',   'Miguel',  'Dela Cruz', 3, true)
     """)
 
     op.execute("""
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Sta. Mesa Mixed-Use Development', 'Sta. Mesa, Manila',
                85000000.00, '2024-01-08', '2026-12-31', 'Active'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
 
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Quezon Avenue Commercial Tower', 'Quezon Avenue, Quezon City',
                72000000.00, '2024-06-03', '2026-12-31', 'Active'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
 
         INSERT INTO projects (owner_id, name, location, total_budget, start_date, target_end_date, status)
         SELECT id, 'Pandacan Warehouse Complex', 'Pandacan, Manila',
                38000000.00, '2024-01-08', '2025-03-31', 'Completed'
-        FROM users WHERE email = 'seed.owner@gmail.com';
+        FROM users WHERE email = 'seed.owner@sitesync.com';
     """)
 
     op.execute("""
@@ -87,34 +87,34 @@ def upgrade() -> None:
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Sta. Mesa Mixed-Use Development'
-          AND u.email = 'seed.project_manager@gmail.com';
+          AND u.email = 'seed.project_manager@sitesync.com';
 
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Pandacan Warehouse Complex'
-          AND u.email = 'seed.project_manager@gmail.com';
+          AND u.email = 'seed.project_manager@sitesync.com';
 
         INSERT INTO project_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Quezon Avenue Commercial Tower'
-          AND u.email = 'seed.pm2@gmail.com';
+          AND u.email = 'seed.pm2@sitesync.com';
     """)
 
     op.execute("""
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Sta. Mesa Mixed-Use Development'
-          AND u.email IN ('seed.worker1@gmail.com', 'seed.worker2@gmail.com', 'seed.worker3@gmail.com');
+          AND u.email IN ('seed.worker1@sitesync.com', 'seed.worker2@sitesync.com', 'seed.worker3@sitesync.com');
 
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Quezon Avenue Commercial Tower'
-          AND u.email IN ('seed.worker3@gmail.com', 'seed.worker4@gmail.com', 'seed.worker5@gmail.com');
+          AND u.email IN ('seed.worker3@sitesync.com', 'seed.worker4@sitesync.com', 'seed.worker5@sitesync.com');
 
         INSERT INTO worker_assignments (project_id, user_id)
         SELECT p.id, u.id FROM projects p, users u
         WHERE p.name = 'Pandacan Warehouse Complex'
-          AND u.email IN ('seed.worker1@gmail.com', 'seed.worker4@gmail.com', 'seed.worker5@gmail.com');
+          AND u.email IN ('seed.worker1@sitesync.com', 'seed.worker4@sitesync.com', 'seed.worker5@sitesync.com');
     """)
 
 
@@ -147,9 +147,9 @@ def downgrade() -> None:
             'Pandacan Warehouse Complex'
         );
         DELETE FROM users WHERE email IN (
-            'seed.pm2@gmail.com',
-            'seed.worker1@gmail.com', 'seed.worker2@gmail.com',
-            'seed.worker3@gmail.com', 'seed.worker4@gmail.com',
-            'seed.worker5@gmail.com'
+            'seed.pm2@sitesync.com',
+            'seed.worker1@sitesync.com', 'seed.worker2@sitesync.com',
+            'seed.worker3@sitesync.com', 'seed.worker4@sitesync.com',
+            'seed.worker5@sitesync.com'
         );
     """)
