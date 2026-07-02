@@ -26,6 +26,7 @@ from app.models.project import Project
 from app.models.role import Role
 from app.models.user import User
 from app.routers import all_routers
+from app.routers.health import router as health_router
 
 TEST_DATABASE_URL = settings.TEST_DATABASE_URL
 
@@ -240,6 +241,17 @@ async def client(db: AsyncSession):
         yield db
 
     a = _make_test_app({get_db: override_get_db})
+    async with AsyncClient(transport=ASGITransport(app=a), base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture(scope="function")
+async def health_client(db: AsyncSession):
+    async def override_get_db():
+        yield db
+
+    a = _make_test_app({get_db: override_get_db})
+    a.include_router(health_router)
     async with AsyncClient(transport=ASGITransport(app=a), base_url="http://test") as ac:
         yield ac
 
