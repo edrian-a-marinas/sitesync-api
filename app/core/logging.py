@@ -27,21 +27,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 def get_db_label() -> str:
     url = settings.DATABASE_URL
-    if "localhost" in url or "127.0.0.1" in url:
-        return "DEV"
-    return "PROD"
-
-
-def get_redis_label() -> str:
-    url = settings.REDIS_URL
-    if "localhost" in url or "127.0.0.1" in url:
-        return "DEV"
-    return "PROD"
-
-
-def get_cache_label() -> str:
-    url = settings.REDIS_CACHE_URL
-    if "localhost" in url or "127.0.0.1" in url:
+    if "localhost" in url or "127.0.0.1" in url or "@postgres" in url:
         return "DEV"
     return "PROD"
 
@@ -73,7 +59,12 @@ async def check_connections() -> dict:
 
     try:
         inspector = celery_app.control.inspect(timeout=2.0)
-        result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
+        result = None
+        for _ in range(3):
+            result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
+            if result:
+                break
+            await asyncio.sleep(1)
         results["celery"] = f"connected ({len(result)} worker(s))" if result else "no workers"
     except Exception:
         results["celery"] = "unreachable"
