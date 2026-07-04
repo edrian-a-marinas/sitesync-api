@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None
     AWS_REGION: Optional[str] = None
+    AWS_ACCOUNT_ID: Optional[str] = None
     AWS_S3_BUCKET: Optional[str] = None
 
     # Constants / hard coded
