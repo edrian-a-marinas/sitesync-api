@@ -1,4 +1,4 @@
-# SiteSync — Construction Project & Daily Site Log SaaS
+# SiteSync — Construction Project & Daily Site Log
 
 🔗 **[Live Demo](https://getsitesync.vercel.app)** · 🎬 **[Demo Video](https://drive.google.com/file/d/1l8umfMvtsFmqvmx9zrP3nbgHdjgkLYcd/view?usp=drive_link)** · 💻 **[Frontend Repo](https://github.com/edrian-a-marinas/sitesync-client)**
 
