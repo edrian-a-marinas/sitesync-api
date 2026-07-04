@@ -58,15 +58,9 @@ async def check_connections() -> dict:
         results["cache"] = "unreachable"
 
     try:
-        inspector = celery_app.control.inspect(timeout=2.0)
-        result = None
-        for _ in range(3):
-            result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
-            if result:
-                break
-            await asyncio.sleep(1)
-        results["celery"] = f"connected ({len(result)} worker(s))" if result else "no workers"
+        with celery_app.connection() as conn:
+            await asyncio.get_event_loop().run_in_executor(None, conn.ensure_connection, None, 1)
+        results["celery"] = "connected"
     except Exception:
         results["celery"] = "unreachable"
-
     return results

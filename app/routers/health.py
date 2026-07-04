@@ -53,12 +53,9 @@ async def redis_health(response: Response):
 @router.get("/celery")
 async def celery_health(response: Response):
     try:
-        inspector = celery_app.control.inspect(timeout=2.0)
-        result = await asyncio.get_event_loop().run_in_executor(None, inspector.ping)
-        if not result:
-            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-            return {"status": "error", "celery": "no workers responding"}
-        return {"status": "ok", "celery": "connected", "workers": len(result)}
+        with celery_app.connection() as conn:
+            await asyncio.get_event_loop().run_in_executor(None, conn.ensure_connection, None, 1)
+        return {"status": "ok", "celery": "broker reachable"}
     except Exception as e:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "celery": "disconnected", "detail": str(e)}

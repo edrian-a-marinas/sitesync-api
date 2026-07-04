@@ -272,36 +272,22 @@ class TestGetAIQueries:
 class TestCreateAIQueryServiceUnavailable:
     async def test_celery_worker_down_returns_503(self, owner_client: AsyncClient):
         with patch("app.routers.ai_query.process_ai_query") as mock_task:
-            mock_task.app.control.ping.return_value = None
+            mock_task.delay.side_effect = OperationalError("broker unreachable")
             res = await owner_client.post(
                 AI_QUERY_URL,
                 json={"question": "Which project used the most cement?"},
             )
         assert res.status_code == 503
-        mock_task.delay.assert_not_called()
 
     async def test_celery_worker_down_does_not_create_orphaned_row(self, owner_client: AsyncClient, test_session_factory):
         with patch("app.routers.ai_query.process_ai_query") as mock_task:
-            mock_task.app.control.ping.return_value = None
+            mock_task.delay.side_effect = OperationalError("broker unreachable")
             await owner_client.post(
                 AI_QUERY_URL,
                 json={"question": "Orphan check question?"},
             )
         async with test_session_factory() as session:
             result = await session.execute(select(AIQuery).where(AIQuery.question == "Orphan check question?"))
-            assert result.scalar_one_or_none() is None
-
-    async def test_broker_error_on_dispatch_returns_503_and_cleans_up(self, owner_client: AsyncClient, test_session_factory):
-        with patch("app.routers.ai_query.process_ai_query") as mock_task:
-            mock_task.app.control.ping.return_value = True
-            mock_task.delay.side_effect = OperationalError("broker unreachable")
-            res = await owner_client.post(
-                AI_QUERY_URL,
-                json={"question": "Broker drop question?"},
-            )
-        assert res.status_code == 503
-        async with test_session_factory() as session:
-            result = await session.execute(select(AIQuery).where(AIQuery.question == "Broker drop question?"))
             assert result.scalar_one_or_none() is None
 
 

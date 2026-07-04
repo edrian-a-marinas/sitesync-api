@@ -54,6 +54,13 @@ async def report_exists_today(project_id: int, user_id: int, db: AsyncSession) -
     return False
 
 
+def log_queue_failure(task_name: str, project_id: int, current_user: User) -> None:
+    logger.error(
+        f"REPORT | task={task_name} | project_id={project_id} | user_id={current_user.id} | "
+        f"role_id={current_user.role_id} | status=failed | reason=queue unreachable"
+    )
+
+
 async def generate_report(project_id: int, generated_by: int, db: AsyncSession, source: str = "manual") -> Report | None:
     week_end = date.today()
     week_start = week_end - timedelta(days=7)
