@@ -5,7 +5,7 @@ from app.core.settings import settings
 
 celery_app = Celery(
     "sitesync",
-    broker=settings.REDIS_URL,
+    broker="sqs://",
     backend=settings.REDIS_URL,
     include=["app.tasks.report", "app.tasks.ai_query", "app.tasks.ml"],
 )
@@ -16,6 +16,18 @@ celery_app.conf.update(
     accept_content=["json"],
     timezone="Asia/Manila",
     enable_utc=True,
+    broker_transport_options={
+        "region": settings.AWS_REGION,
+        "predefined_queues": {
+            "celery": {
+                "url": f"https://sqs.{settings.AWS_REGION}.amazonaws.com/{settings.AWS_ACCOUNT_ID}/sitesync-celery",
+            }
+        },
+        "polling_interval": 20,
+        "wait_time_seconds": 20,
+        "visibility_timeout": 600,
+    },
+    task_default_queue="celery",
     beat_schedule={
         "weekly-report-every-monday": {
             "task": "trigger_all_weekly_reports",
