@@ -22,6 +22,9 @@ from app.services.ai_query import (
 from app.services.ai_query import (
     get_query as _get_query,
 )
+from app.services.ai_query import (
+    log_queue_failure,
+)
 from app.tasks.ai_query import process_ai_query
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -36,15 +39,11 @@ async def create_query(
     current_user: User = Depends(require_owner),
     db: AsyncSession = Depends(get_db),
 ):
-    if not process_ai_query.app.control.ping(timeout=1.0):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="AI query service is currently unavailable. Please try again later.",
-        )
     query = await _create_query(data, current_user, db)
     try:
         process_ai_query.delay(query.id)
     except OperationalError:
+        log_queue_failure("process_ai_query", query.id, current_user)
         await _delete_query(query.id, current_user, db)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

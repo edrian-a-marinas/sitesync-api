@@ -1,6 +1,7 @@
 import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner
@@ -18,6 +19,7 @@ from app.services.ml import (
 from app.services.ml import (
     get_material_forecast_predictions as _get_material_forecast_predictions,
 )
+from app.services.ml import log_queue_failure
 from app.tasks.ml import retrain_ml_models
 
 router = APIRouter(prefix="/ml", tags=["ML Analytics"])
@@ -55,7 +57,14 @@ async def trigger_retrain(
     request: Request,
     current_user: User = Depends(require_owner),
 ):
-    retrain_ml_models.delay()
+    try:
+        retrain_ml_models.delay()
+    except OperationalError:
+        log_queue_failure("retrain_ml_models", current_user)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ML retraining service is currently unavailable. Please try again later.",
+        )
     return {"status": "queued", "detail": "ML models retraining started"}
 
 

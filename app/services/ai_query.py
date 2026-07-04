@@ -475,6 +475,13 @@ async def create_query(data: AIQueryRequest, current_user: User, db: AsyncSessio
     return query
 
 
+def log_queue_failure(task_name: str, query_id: int, current_user: User) -> None:
+    logger.error(
+        f"AI_QUERY | task={task_name} | query_id={query_id} | user_id={current_user.id} | "
+        f"role_id={current_user.role_id} | status=failed | reason=queue unreachable"
+    )
+
+
 async def get_query(query_id: int, current_user: User, db: AsyncSession) -> AIQuery | None:
     query = (await db.execute(select(AIQuery).where(AIQuery.id == query_id).where(AIQuery.user_id == current_user.id))).scalar_one_or_none()
     if not query:

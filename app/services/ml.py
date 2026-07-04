@@ -69,3 +69,9 @@ async def get_material_forecast_predictions(db: AsyncSession) -> MaterialForecas
 async def invalidate_ml_cache() -> None:
     await delete_pattern("ml:*")
     logger.info("ML_SERVICE | cache invalidated")
+
+
+def log_queue_failure(task_name: str, current_user) -> None:
+    logger.error(
+        f"ML_SERVICE | task={task_name} | user_id={current_user.id} | role_id={current_user.role_id} | status=failed | reason=queue unreachable"
+    )

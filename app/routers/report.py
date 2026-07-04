@@ -2,6 +2,7 @@ import io
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_owner_or_manager
@@ -9,7 +10,7 @@ from app.core.limiter import limiter
 from app.database import get_db
 from app.models.user import User
 from app.schemas.report import ReportListResponse
-from app.services.report import get_report_for_download, report_exists_today, validate_project_exists, verify_project_access
+from app.services.report import get_report_for_download, log_queue_failure, report_exists_today, validate_project_exists, verify_project_access
 from app.services.report import get_reports as _get_reports
 from app.services.s3 import get_file_bytes
 from app.tasks.report import generate_weekly_report
@@ -33,12 +34,14 @@ async def trigger_report(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
     if await report_exists_today(project_id, current_user.id, db):
         return {"status": "exists", "detail": "You have already generated a report today"}
-    if not generate_weekly_report.app.control.ping(timeout=1.0):
+    try:
+        generate_weekly_report.delay(project_id, current_user.id, "manual")
+    except OperationalError:
+        log_queue_failure("generate_weekly_report", project_id, current_user)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Report generation service is currently unavailable. Please try again later.",
         )
-    generate_weekly_report.delay(project_id, current_user.id, "manual")
     response.status_code = status.HTTP_202_ACCEPTED
     return {"status": "queued", "detail": "Report generation started"}
 
