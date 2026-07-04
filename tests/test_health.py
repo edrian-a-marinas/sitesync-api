@@ -54,30 +54,22 @@ class TestRedisHealthCheck:
 class TestCeleryHealthCheck:
     async def test_celery_health_check_connected(self, health_client):
         with patch("app.routers.health.celery_app") as mock_celery:
-            mock_inspector = MagicMock()
-            mock_inspector.ping.return_value = {"worker1": {"ok": "pong"}}
-            mock_celery.control.inspect.return_value = mock_inspector
+            mock_conn = MagicMock()
+            mock_conn.__enter__.return_value = mock_conn
+            mock_conn.ensure_connection.return_value = None
+            mock_celery.connection.return_value = mock_conn
             response = await health_client.get("/health/celery")
             assert response.status_code == 200
             data = response.json()
             assert data["status"] == "ok"
-            assert data["celery"] == "connected"
-            assert data["workers"] == 1
-
-    async def test_celery_health_check_no_workers(self, health_client):
-        with patch("app.routers.health.celery_app") as mock_celery:
-            mock_inspector = MagicMock()
-            mock_inspector.ping.return_value = None
-            mock_celery.control.inspect.return_value = mock_inspector
-            response = await health_client.get("/health/celery")
-            assert response.status_code == 503
-            data = response.json()
-            assert data["status"] == "error"
-            assert data["celery"] == "no workers responding"
+            assert data["celery"] == "broker reachable"
 
     async def test_celery_health_check_disconnected(self, health_client):
         with patch("app.routers.health.celery_app") as mock_celery:
-            mock_celery.control.inspect.side_effect = Exception("broker unreachable")
+            mock_conn = MagicMock()
+            mock_conn.__enter__.return_value = mock_conn
+            mock_conn.ensure_connection.side_effect = Exception("broker unreachable")
+            mock_celery.connection.return_value = mock_conn
             response = await health_client.get("/health/celery")
             assert response.status_code == 503
             data = response.json()
