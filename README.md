@@ -13,7 +13,7 @@ Construction companies managing several job sites at once often lose track of da
 - **File uploads** — progress photos, receipts, and inspection documents attached to daily logs.
 - **Automated weekly reports** — PDF reports generated in the background and stored for download.
 - **AI assistant** — ask natural language questions about cost, materials, workforce, or incidents across projects.
-- **Predictive analytics** — machine learning models forecast budget overruns, delay risk, and material costs.
+- **Machine learning** — predictive models estimate budget overruns, delay risk, and material costs.
 - **Live dashboards** — budget, workforce, and incident KPIs that update automatically as new activity is logged.
 
 ---
@@ -22,10 +22,11 @@ Construction companies managing several job sites at once often lose track of da
 
 ```mermaid
 flowchart LR
-    Client[React SPA] -->|REST API| API[FastAPI - EC2]
+    Client[React SPA] -->|HTTPS| Proxy[Caddy - Auto SSL]
+    Proxy --> API[FastAPI - EC2]
     API --> DB[(PostgreSQL - RDS)]
     API --> Cache[(Redis Cache)]
-    API -->|queue task| Broker[(Redis Broker)]
+    API -->|queue task| Broker[(AWS SQS)]
     Broker --> Worker[Celery Worker]
     Worker --> DB
     Worker --> S3[(AWS S3)]
@@ -44,7 +45,7 @@ flowchart LR
 | AI / ML | RAG, GroqAPI, scikit-learn, RandomForest — training, forecasting, and prediction (2 year seeded datas) |
 | Security | JWT, Role-based dependencies endpoints, Rate limiting, CORS, secrets credentials management, ORM-protected SQL, HTTPS |
 | Performance | Redis (cache + broker), Celery/Beat, end-to-end pagination, Tanstack Query cache, database indexes |
-| Deployment | AWS (EC2, RDS, S3), Docker, Vercel, GitHub Actions |
+| Deployment | AWS (EC2, RDS, S3, ECS), Docker, Caddy (reverse proxy + auto SSL), Vercel, GitHub Actions |
 
 ---
 
@@ -55,7 +56,7 @@ flowchart LR
 - **Security middleware**: CORS, trusted host, GZip compression, custom security headers (HSTS, X-Frame-Options)
 - **Rate limiting**: Per-endpoint limits via SlowAPI (e.g. 10/min on writes, 30/min on reads)
 - **Caching**: Redis-backed response caching with pattern-based invalidation on writes
-- **Async tasks**: Celery + Redis broker for background jobs — weekly report generation, scheduled triggers, cleanup
+- **Async tasks**: AWS SQS Celery + Redis broker for background jobs — weekly report generation, scheduled triggers, cleanup
 - **Logging**: Centralized structured logging — tracks validation errors, HTTP exceptions, and startup connection health (DB, Redis, Celery)
 - **Migrations**: Alembic-managed, version-controlled schema history
 - **Code quality**: Enforced via Ruff (backend) and ESLint + Prettier (frontend)
