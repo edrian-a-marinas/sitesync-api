@@ -34,7 +34,7 @@ celery_app.conf.update(
         "wait_time_seconds": 20,
         "visibility_timeout": 600,
     }
-    if _use_sqsc
+    if _use_sqs
     else {},
     task_default_queue="celery",
     beat_schedule={
