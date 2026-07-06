@@ -26,6 +26,7 @@ from app.services.ai_query import (
     log_queue_failure,
 )
 from app.tasks.ai_query import process_ai_query
+from app.tasks.embedding import backfill_daily_log_embeddings as _backfill_daily_log_embeddings
 
 router = APIRouter(prefix="/ai", tags=["AI"])
 
@@ -50,6 +51,23 @@ async def create_query(
             detail="AI query service is currently unavailable. Please try again later.",
         )
     return query
+
+
+@router.post("/embeddings/backfill", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("2/minute")
+async def backfill_daily_log_embeddings(
+    request: Request,
+    current_user: User = Depends(require_owner),
+):
+    try:
+        _backfill_daily_log_embeddings.delay()
+    except OperationalError:
+        log_queue_failure("backfill_daily_log_embeddings", 0, current_user)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Embedding backfill service is currently unavailable. Please try again later.",
+        )
+    return {"status": "queued", "detail": "Embedding backfill started"}
 
 
 # ==================== Services ====================

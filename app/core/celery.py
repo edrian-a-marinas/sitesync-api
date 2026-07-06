@@ -1,13 +1,20 @@
+import logging
+
 from celery import Celery
 from celery.schedules import crontab
 
 from app.core.settings import settings
 
+logger = logging.getLogger(__name__)
+
+_use_sqs = bool(settings.AWS_REGION and settings.AWS_ACCOUNT_ID)
+_broker_url = "sqs://" if _use_sqs else settings.REDIS_URL
+
 celery_app = Celery(
     "sitesync",
-    broker="sqs://",
+    broker=_broker_url,
     backend=settings.REDIS_URL,
-    include=["app.tasks.report", "app.tasks.ai_query", "app.tasks.ml"],
+    include=["app.tasks.report", "app.tasks.ai_query", "app.tasks.ml", "app.tasks.embedding"],
 )
 
 celery_app.conf.update(
@@ -26,7 +33,9 @@ celery_app.conf.update(
         "polling_interval": 20,
         "wait_time_seconds": 20,
         "visibility_timeout": 600,
-    },
+    }
+    if _use_sqsc
+    else {},
     task_default_queue="celery",
     beat_schedule={
         "weekly-report-every-monday": {
