@@ -1,5 +1,6 @@
 import logging
 
+from kombu.exceptions import OperationalError
 from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -11,6 +12,9 @@ from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.attendance import AttendanceCreate
+from app.tasks.embedding import generate_daily_log_embedding
+
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +72,10 @@ async def create_attendance(project_id: int, log_id: int, data: AttendanceCreate
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_pattern("dashboard:owner:*")
     logger.info(f"ATTENDANCE | worker_id={data.worker_id} | log_id={log_id} | submitted_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return attendance
 
 
