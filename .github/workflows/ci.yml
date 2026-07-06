@@ -16,7 +16,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: apmed
           POSTGRES_PASSWORD: edrian
@@ -53,7 +53,6 @@ jobs:
 
       - name: Lint with ruff
         run: ruff check .
-
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://apmed:edrian@localhost/sitesync_test
