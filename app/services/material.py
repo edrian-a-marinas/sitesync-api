@@ -1,5 +1,6 @@
 import logging
 
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -9,6 +10,7 @@ from app.models.project import ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.material import MaterialCreate, MaterialUpdate
+from app.tasks.embedding import generate_daily_log_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,10 @@ async def create_material(project_id: int, log_id: int, data: MaterialCreate, cu
     await delete_pattern("dashboard:owner:*")
     await delete_pattern("ml:*")
     logger.info(f"MATERIAL_CREATE | log_id={log_id} | material_id={material.id} | submitted_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return material
 
 
@@ -103,6 +109,10 @@ async def update_material(
     await delete_pattern("dashboard:owner:*")
     await delete_pattern("ml:*")
     logger.info(f"MATERIAL_UPDATE | log_id={log_id} | material_id={material_id} | updated_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return material
 
 
@@ -122,4 +132,8 @@ async def delete_material(project_id: int, log_id: int, material_id: int, curren
     await delete_pattern("dashboard:owner:*")
     await delete_pattern("ml:*")
     logger.info(f"MATERIAL_DELETE | log_id={log_id} | material_id={material_id} | deleted_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return True
