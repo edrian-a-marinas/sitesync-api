@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: Optional[str] = None
 
     # Constants / hard coded
-    PROJECTS_TTL: int = 120
+    PROJECTS_TTL: int = 120  # seconds 2 mins
 
     OWNER_DASHBOARD_TTL: int = 60
     MANAGER_DASHBOARD_TTL: int = 60
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     PENDING_TIMEOUT_MINUTES: int = 5
 
-    ML_CACHE_TTL: int = 3600
+    ML_CACHE_TTL: int = 3600  # 1 hour
     ML_MODELS_DIR: str = "app/ml/models"
 
     ALLOWED_CONTENT_TYPES: set[str] = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
