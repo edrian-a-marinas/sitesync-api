@@ -1,6 +1,9 @@
 import logging
+import os
 
 from sentence_transformers import SentenceTransformer
+
+os.environ["HF_HUB_OFFLINE"] = "1"
 
 logger = logging.getLogger(__name__)
 

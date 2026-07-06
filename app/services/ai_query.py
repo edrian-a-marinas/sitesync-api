@@ -10,12 +10,14 @@ from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
+from app.models.embedding import DailyLogEmbedding
 from app.models.equipment import Equipment
 from app.models.incident import Incident
 from app.models.material import Material
 from app.models.project import Project, ProjectAssignment, ProjectPhase, WorkerAssignment
 from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest
+from app.services.embedding import generate_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +383,20 @@ async def _retrieve_equipment(db: AsyncSession, project_id: int | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+async def _retrieve_semantic_matches(db: AsyncSession, question: str, project_id: int | None) -> str:
+    vector = generate_embedding(question)
+    stmt = select(DailyLogEmbedding).order_by(DailyLogEmbedding.embedding.cosine_distance(vector)).limit(5)
+    if project_id:
+        stmt = stmt.where(DailyLogEmbedding.project_id == project_id)
+    rows = (await db.execute(stmt)).scalars().all()
+    if not rows:
+        return "SEMANTIC_MATCHES: No related daily logs found.\n"
+    lines = ["SEMANTIC_MATCHES (related daily logs by meaning):"]
+    for r in rows:
+        lines.append(f"  [daily_log_id={r.daily_log_id}] {r.content_text}")
+    return "\n".join(lines) + "\n"
+
+
 async def _retrieve_general(db: AsyncSession, project_id: int | None) -> str:
     stmt = select(Project)
     if project_id:
@@ -458,6 +474,12 @@ async def retrieve_context(db: AsyncSession, question: str, project_id: int | No
             except Exception as e:
                 logger.error(f"AI_QUERY | retrieve_context | intent={intent} | error={str(e)}")
                 context_parts.append(f"{intent.upper()}: Retrieval failed.\n")
+    try:
+        semantic_block = await _retrieve_semantic_matches(db, question, project_id)
+        context_parts.append(semantic_block)
+    except Exception as e:
+        logger.error(f"AI_QUERY | retrieve_context | intent=semantic | error={str(e)}")
+        context_parts.append("SEMANTIC_MATCHES: Retrieval failed.\n")
     return "\n".join(context_parts)
 
 
