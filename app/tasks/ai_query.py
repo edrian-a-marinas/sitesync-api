@@ -3,7 +3,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import groq
-from groq import Groq
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_groq import ChatGroq
 from sqlalchemy.future import select
 
 from app.core.celery import celery_app
@@ -15,10 +16,10 @@ from app.services.ai_query import retrieve_context
 logger = logging.getLogger(__name__)
 
 
-def get_groq_client() -> Groq:
+def get_groq_client() -> ChatGroq:
     if not settings.GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY is not set")
-    return Groq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=12.0)
+    return ChatGroq(api_key=settings.GROQ_API_KEY, model="llama-3.3-70b-versatile", max_retries=0, timeout=12.0, max_tokens=500)
 
 
 @celery_app.task(name="process_ai_query")
@@ -34,9 +35,10 @@ async def _process_ai_query(query_id: int):
             logger.error(f"AI_QUERY | query_id={query_id} | status=failed | reason=not found")
             return
         try:
-            client = get_groq_client()
+            llm = get_groq_client()
             context = await retrieve_context(db, query.question, query.project_id)
-            prompt = f"""You are SiteSync AI, an assistant for construction project management.
+            prompt = ChatPromptTemplate.from_template(
+                """You are SiteSync AI, an assistant for construction project management.
 Answer directly and concisely based only on the data provided. No preambles, no unsolicited advice.
 RULES:
 1. Answer only what was asked.
@@ -50,13 +52,11 @@ RULES:
 9. "Budget overrun risk" = budget_used_percent (higher % = higher risk). The BUDGET section is already sorted highest-risk first — use that order directly when ranking.
 PROJECT DATA:
 {context}
-QUESTION: {query.question}"""
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=500,
+QUESTION: {question}"""
             )
-            query.answer = response.choices[0].message.content
+            chain = prompt | llm
+            response = await chain.ainvoke({"context": context, "question": query.question})
+            query.answer = response.content
             query.status = "Done"
             logger.info(f"AI_QUERY | query_id={query_id} | status=done")
         except groq.RateLimitError as e:
