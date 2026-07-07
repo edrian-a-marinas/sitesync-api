@@ -3,12 +3,18 @@ from datetime import datetime, timezone
 
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.settings import settings
 from app.models.ai_query import AIQuery
+from app.models.attendance import Attendance
+from app.models.daily_log import DailyLog
 from app.models.embedding import DailyLogEmbedding
+from app.models.incident import Incident
+from app.models.material import Material
+from app.models.project import Project
 from app.models.user import User
 from app.schemas.ai_query import AIQueryRequest
 from app.services.embedding import generate_embedding
@@ -36,19 +42,84 @@ class DailyLogEmbeddingRetriever(BaseRetriever):
         raise NotImplementedError("Use async retrieval via ainvoke/aget_relevant_documents")
 
 
+async def _retrieve_project_summary(db: AsyncSession, project_id: int | None) -> str:
+    stmt = select(Project)
+    if project_id:
+        stmt = stmt.where(Project.id == project_id)
+    else:
+        stmt = stmt.where(Project.status == "Active")
+    projects = (await db.execute(stmt)).scalars().all()
+    if not projects:
+        return "PROJECT_SUMMARY: No project records found.\n"
+    lines = ["PROJECT_SUMMARY (overview stats per project):"]
+    for project in projects:
+        total_material_cost = float(
+            (
+                await db.execute(
+                    select(func.sum(Material.total_cost))
+                    .join(DailyLog, DailyLog.id == Material.daily_log_id)
+                    .where(DailyLog.project_id == project.id)
+                )
+            ).scalar()
+            or 0.0
+        )
+        total_hours = float(
+            (
+                await db.execute(
+                    select(func.sum(Attendance.hours_worked))
+                    .join(DailyLog, DailyLog.id == Attendance.daily_log_id)
+                    .where(DailyLog.project_id == project.id)
+                )
+            ).scalar()
+            or 0.0
+        )
+        incident_count = (
+            await db.execute(
+                select(func.count(Incident.id)).join(DailyLog, DailyLog.id == Incident.daily_log_id).where(DailyLog.project_id == project.id)
+            )
+        ).scalar() or 0
+        open_incidents = (
+            await db.execute(
+                select(func.count(Incident.id))
+                .join(DailyLog, DailyLog.id == Incident.daily_log_id)
+                .where(DailyLog.project_id == project.id)
+                .where(Incident.status == "Open")
+            )
+        ).scalar() or 0
+        budget = float(project.total_budget)
+        variance = budget - total_material_cost
+        budget_used_percent = (total_material_cost / budget * 100) if budget > 0 else 0.0
+        lines.append(
+            f"  {project.name} | location={project.location} | status={project.status} | "
+            f"budget=\u20b1{budget:,.2f} | spent=\u20b1{total_material_cost:,.2f} | "
+            f"variance=\u20b1{variance:,.2f} | budget_used_percent={budget_used_percent:.1f}% | "
+            f"total_hours_worked={total_hours} | total_incidents={incident_count} | open_incidents={open_incidents} | "
+            f"start={project.start_date} | target_end={project.target_end_date}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 async def retrieve_context(db: AsyncSession, question: str, project_id: int | None) -> str:
+    context_parts: list[str] = []
     retriever = DailyLogEmbeddingRetriever(db=db, project_id=project_id, k=5)
     try:
         docs = await retriever.ainvoke(question)
+        if docs:
+            lines = ["SEMANTIC_MATCHES (related daily logs by meaning):"]
+            for doc in docs:
+                lines.append(f"  [daily_log_id={doc.metadata['daily_log_id']}] {doc.page_content}")
+            context_parts.append("\n".join(lines) + "\n")
+        else:
+            context_parts.append("SEMANTIC_MATCHES: No related daily logs found.\n")
     except Exception as e:
-        logger.error(f"AI_QUERY | retrieve_context | error={str(e)}")
-        return "SEMANTIC_MATCHES: Retrieval failed.\n"
-    if not docs:
-        return "SEMANTIC_MATCHES: No related daily logs found.\n"
-    lines = ["SEMANTIC_MATCHES (related daily logs by meaning):"]
-    for doc in docs:
-        lines.append(f"  [daily_log_id={doc.metadata['daily_log_id']}] {doc.page_content}")
-    return "\n".join(lines) + "\n"
+        logger.error(f"AI_QUERY | retrieve_context | semantic | error={str(e)}")
+        context_parts.append("SEMANTIC_MATCHES: Retrieval failed.\n")
+    try:
+        context_parts.append(await _retrieve_project_summary(db, project_id))
+    except Exception as e:
+        logger.error(f"AI_QUERY | retrieve_context | project_summary | error={str(e)}")
+        context_parts.append("PROJECT_SUMMARY: Retrieval failed.\n")
+    return "\n".join(context_parts)
 
 
 async def create_query(data: AIQueryRequest, current_user: User, db: AsyncSession) -> AIQuery:
