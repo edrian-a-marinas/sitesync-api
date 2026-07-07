@@ -16,9 +16,8 @@ celery_app = Celery(
     "sitesync",
     broker=_broker_url,
     backend=settings.REDIS_URL,
-
     include=["app.tasks.report", "app.tasks.ai_query", "app.tasks.ml", "app.tasks.embedding", "app.tasks.webhook"],
-
+)
 
 celery_app.conf.update(
     task_serializer="json",
