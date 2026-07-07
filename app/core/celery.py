@@ -1,5 +1,7 @@
 import logging
+import os
 
+os.environ["HF_HUB_OFFLINE"] = "1"
 from celery import Celery
 from celery.schedules import crontab
 
