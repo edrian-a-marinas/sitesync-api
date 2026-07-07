@@ -15,6 +15,7 @@ from app.models.embedding import DailyLogEmbedding
 from app.models.project import Project
 from app.services.ai_query import (
     DailyLogEmbeddingRetriever,
+    _retrieve_project_summary,
     retrieve_context,
 )
 
@@ -472,7 +473,33 @@ class TestDailyLogEmbeddingRetriever:
 
 
 # ---------------------------------------------------------------------------
-# retrieve_context (formats retrieved documents into the LLM context string)
+# _retrieve_project_summary (overview fallback: budget, incidents, hours)
+# ---------------------------------------------------------------------------
+class TestRetrieveProjectSummary:
+    async def test_includes_overview_fields(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        async with test_session_factory() as session:
+            context = await _retrieve_project_summary(session, project_id=project.id)
+        assert "PROJECT_SUMMARY" in context
+        assert project.name in context
+        assert "budget_used_percent=" in context
+        assert "total_hours_worked=" in context
+        assert "total_incidents=" in context
+        assert "open_incidents=" in context
+
+    async def test_no_project_id_scopes_to_active_projects(self, seed_ai_query_data, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_project_summary(session, project_id=None)
+        assert "PROJECT_SUMMARY" in context
+
+    async def test_nonexistent_project_id_returns_empty_message(self, test_session_factory):
+        async with test_session_factory() as session:
+            context = await _retrieve_project_summary(session, project_id=999999)
+        assert "No project records found" in context
+
+
+# ---------------------------------------------------------------------------
+# retrieve_context (combines semantic matches + project summary for the LLM)
 # ---------------------------------------------------------------------------
 class TestRetrieveContext:
     async def test_formats_documents_into_semantic_matches_block(self, seed_ai_query_data, test_session_factory):
@@ -487,16 +514,40 @@ class TestRetrieveContext:
         assert "daily_log_id=1" in context
         assert "Poured concrete for foundation" in context
 
-    async def test_no_matches_returns_empty_message(self, seed_ai_query_data, test_session_factory):
+    async def test_always_includes_project_summary_alongside_semantic_matches(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        with patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "how is this project?", project.id)
+        assert "PROJECT_SUMMARY" in context
+        assert project.name in context
+
+    async def test_no_matches_returns_empty_message_but_keeps_summary(self, seed_ai_query_data, test_session_factory):
         project = seed_ai_query_data["project"]
         with patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])):
             async with test_session_factory() as session:
                 context = await retrieve_context(session, "no match question", project.id)
         assert "No related daily logs found" in context
+        assert "PROJECT_SUMMARY" in context
 
-    async def test_retriever_exception_produces_failed_message_not_crash(self, seed_ai_query_data, test_session_factory):
+    async def test_retriever_exception_produces_failed_message_but_keeps_summary(self, seed_ai_query_data, test_session_factory):
         project = seed_ai_query_data["project"]
         with patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(side_effect=Exception("db exploded"))):
             async with test_session_factory() as session:
                 context = await retrieve_context(session, "any question", project.id)
         assert "SEMANTIC_MATCHES: Retrieval failed." in context
+        assert "PROJECT_SUMMARY" in context
+
+    async def test_summary_exception_produces_failed_message_but_keeps_semantic(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        fake_docs = [
+            Document(page_content="Poured concrete for foundation", metadata={"daily_log_id": 1, "project_id": project.id}),
+        ]
+        with (
+            patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=fake_docs)),
+            patch("app.services.ai_query._retrieve_project_summary", new=AsyncMock(side_effect=Exception("db exploded"))),
+        ):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "any question", project.id)
+        assert "SEMANTIC_MATCHES" in context
+        assert "PROJECT_SUMMARY: Retrieval failed." in context
