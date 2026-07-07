@@ -1,19 +1,53 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import groq
 import httpx
 import pytest
+import pytest_asyncio
+from sqlalchemy import delete
 from sqlalchemy.future import select
 
 from app.models.ai_query import AIQuery
+from app.models.daily_log import DailyLog
+from app.models.embedding import DailyLogEmbedding
+from app.models.project import Project
 from app.tasks.ai_query import (
     _cleanup_old_ai_queries,
     _process_ai_query,
     cleanup_old_ai_queries,
     process_ai_query,
 )
+from app.tasks.embedding import (
+    _backfill_embeddings_async,
+    _generate_daily_log_embedding,
+    backfill_daily_log_embeddings,
+    generate_daily_log_embedding,
+)
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def seed_embedding_task_project(test_session_factory, seed_users):
+    async with test_session_factory() as session:
+        async with session.begin():
+            project = Project(
+                owner_id=seed_users["owner"].id,
+                name="Embedding Task Test Project",
+                location="Manila",
+                total_budget=500_000,
+                start_date=date(2026, 1, 1),
+                target_end_date=date(2026, 12, 31),
+                status="Active",
+            )
+            session.add(project)
+            await session.flush()
+    yield project
+    async with test_session_factory() as session:
+        async with session.begin():
+            await session.execute(delete(Project).where(Project.id == project.id))
+
+
 from app.tasks.ml import _retrain, retrain_ml_models
 from app.tasks.report import (
     _cleanup_old_reports,
@@ -56,10 +90,7 @@ class TestProcessAIQueryTask:
                 session.add(query)
                 await session.flush()
                 query_id = query.id
-        mock_groq_response = MagicMock()
-        mock_groq_response.choices = [MagicMock(message=MagicMock(content="5 workers were present today."))]
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_groq_response
+        mock_client = AsyncMock(return_value=MagicMock(content="5 workers were present today."))
         with (
             patch("app.tasks.ai_query.make_celery_session", make_session_factory_wrapper(test_session_factory)),
             patch("app.tasks.ai_query.get_groq_client", return_value=mock_client),
@@ -111,8 +142,7 @@ class TestProcessAIQueryTaskErrors:
         mock_request = httpx.Request("POST", "https://api.groq.com/v1/chat/completions")
         mock_response = httpx.Response(429, request=mock_request, headers={"retry-after": "30"})
         rate_limit_error = groq.RateLimitError("Rate limit exceeded", response=mock_response, body=None)
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = rate_limit_error
+        mock_client = AsyncMock(side_effect=rate_limit_error)
         with (
             patch("app.tasks.ai_query.make_celery_session", make_session_factory_wrapper(test_session_factory)),
             patch("app.tasks.ai_query.get_groq_client", return_value=mock_client),
@@ -135,8 +165,7 @@ class TestProcessAIQueryTaskErrors:
         mock_request = httpx.Request("POST", "https://api.groq.com/v1/chat/completions")
         mock_response = httpx.Response(429, request=mock_request, headers={"retry-after": "not-a-number"})
         rate_limit_error = groq.RateLimitError("Rate limit exceeded", response=mock_response, body=None)
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = rate_limit_error
+        mock_client = AsyncMock(side_effect=rate_limit_error)
         with (
             patch("app.tasks.ai_query.make_celery_session", make_session_factory_wrapper(test_session_factory)),
             patch("app.tasks.ai_query.get_groq_client", return_value=mock_client),
@@ -157,8 +186,7 @@ class TestProcessAIQueryTaskErrors:
                 query_id = query.id
         mock_request = httpx.Request("POST", "https://api.groq.com/v1/chat/completions")
         timeout_error = groq.APITimeoutError(request=mock_request)
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = timeout_error
+        mock_client = AsyncMock(side_effect=timeout_error)
         with (
             patch("app.tasks.ai_query.make_celery_session", make_session_factory_wrapper(test_session_factory)),
             patch("app.tasks.ai_query.get_groq_client", return_value=mock_client),
@@ -178,8 +206,7 @@ class TestProcessAIQueryTaskErrors:
                 session.add(query)
                 await session.flush()
                 query_id = query.id
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = Exception("unexpected failure")
+        mock_client = AsyncMock(side_effect=Exception("unexpected failure"))
         with (
             patch("app.tasks.ai_query.make_celery_session", make_session_factory_wrapper(test_session_factory)),
             patch("app.tasks.ai_query.get_groq_client", return_value=mock_client),
@@ -472,3 +499,147 @@ class TestCleanupOldReportsTaskWrapper:
         with patch("app.tasks.report._cleanup_old_reports") as mock_inner:
             cleanup_old_reports.run()
         mock_inner.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# EMBEDDING CELERY TASKS TESTS
+# ---------------------------------------------------------------------------
+class TestGenerateDailyLogEmbeddingTask:
+    async def test_success_creates_embedding(self, seed_users, seed_embedding_task_project, test_session_factory):
+        project = seed_embedding_task_project
+        async with test_session_factory() as session:
+            async with session.begin():
+                from datetime import date
+
+                from app.models.daily_log import DailyLog
+
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 4, 1),
+                    work_accomplished="Test embedding generation",
+                )
+                session.add(log)
+                await session.flush()
+                log_id = log.id
+        with (
+            patch("app.tasks.embedding.make_celery_session", make_session_factory_wrapper(test_session_factory)),
+            patch("app.tasks.embedding.build_daily_log_chunk_text", new=AsyncMock(return_value="Some content")),
+            patch("app.tasks.embedding.generate_embedding", return_value=[0.1] * 384),
+        ):
+            await _generate_daily_log_embedding(log_id)
+        async with test_session_factory() as session:
+            result = await session.execute(select(DailyLogEmbedding).where(DailyLogEmbedding.daily_log_id == log_id))
+            embedding = result.scalar_one_or_none()
+        assert embedding is not None
+        assert embedding.content_text == "Some content"
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(DailyLogEmbedding).where(DailyLogEmbedding.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+    async def test_upsert_updates_existing_embedding(self, seed_users, seed_embedding_task_project, test_session_factory):
+        project = seed_embedding_task_project
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 4, 2),
+                    work_accomplished="Original work",
+                )
+                session.add(log)
+                await session.flush()
+                embedding = DailyLogEmbedding(
+                    daily_log_id=log.id,
+                    project_id=project.id,
+                    content_text="Old content",
+                    embedding=[0.0] * 384,
+                )
+                session.add(embedding)
+                await session.flush()
+                log_id = log.id
+        with (
+            patch("app.tasks.embedding.make_celery_session", make_session_factory_wrapper(test_session_factory)),
+            patch("app.tasks.embedding.build_daily_log_chunk_text", new=AsyncMock(return_value="Updated content")),
+            patch("app.tasks.embedding.generate_embedding", return_value=[0.2] * 384),
+        ):
+            await _generate_daily_log_embedding(log_id)
+        async with test_session_factory() as session:
+            result = await session.execute(select(DailyLogEmbedding).where(DailyLogEmbedding.daily_log_id == log_id))
+            updated = result.scalar_one()
+        assert updated.content_text == "Updated content"
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(DailyLogEmbedding).where(DailyLogEmbedding.daily_log_id == log_id))
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+    async def test_daily_log_not_found_returns_early(self, test_session_factory):
+        with patch("app.tasks.embedding.make_celery_session", make_session_factory_wrapper(test_session_factory)):
+            # Should not raise
+            await _generate_daily_log_embedding(999999)
+
+    async def test_exception_is_caught_rolled_back_and_logged(self, seed_users, seed_embedding_task_project, test_session_factory):
+        project = seed_embedding_task_project
+        async with test_session_factory() as session:
+            async with session.begin():
+                log = DailyLog(
+                    project_id=project.id,
+                    submitted_by=seed_users["owner"].id,
+                    log_date=date(2026, 4, 3),
+                    work_accomplished="Will fail",
+                )
+                session.add(log)
+                await session.flush()
+                log_id = log.id
+        with (
+            patch("app.tasks.embedding.make_celery_session", make_session_factory_wrapper(test_session_factory)),
+            patch("app.tasks.embedding.build_daily_log_chunk_text", new=AsyncMock(side_effect=Exception("boom"))),
+        ):
+            # Should not raise — caught internally and logged
+            await _generate_daily_log_embedding(log_id)
+        async with test_session_factory() as session:
+            result = await session.execute(select(DailyLogEmbedding).where(DailyLogEmbedding.daily_log_id == log_id))
+            assert result.scalar_one_or_none() is None
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(DailyLog).where(DailyLog.id == log_id))
+
+
+class TestGenerateDailyLogEmbeddingTaskWrapper:
+    def test_wrapper_invokes_asyncio_run(self):
+        with patch("app.tasks.embedding.asyncio.run") as mock_run:
+            generate_daily_log_embedding.run(1)
+        mock_run.assert_called_once()
+        mock_run.call_args[0][0].close()
+
+
+class TestBackfillDailyLogEmbeddingsTask:
+    async def test_queues_embedding_for_each_daily_log(self, seed_users, seed_embedding_task_project, test_session_factory):
+        project = seed_embedding_task_project
+        async with test_session_factory() as session:
+            async with session.begin():
+                log1 = DailyLog(project_id=project.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 4, 4), work_accomplished="A")
+                log2 = DailyLog(project_id=project.id, submitted_by=seed_users["owner"].id, log_date=date(2026, 4, 5), work_accomplished="B")
+                session.add_all([log1, log2])
+                await session.flush()
+                log1_id, log2_id = log1.id, log2.id
+        with (
+            patch("app.tasks.embedding.make_celery_session", make_session_factory_wrapper(test_session_factory)),
+            patch("app.tasks.embedding.generate_daily_log_embedding") as mock_task,
+        ):
+            await _backfill_embeddings_async()
+        queued_ids = [c.args[0] for c in mock_task.delay.call_args_list]
+        assert log1_id in queued_ids
+        assert log2_id in queued_ids
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(DailyLog).where(DailyLog.id.in_([log1_id, log2_id])))
+
+
+class TestBackfillDailyLogEmbeddingsTaskWrapper:
+    def test_wrapper_invokes_asyncio_run(self):
+        with patch("app.tasks.embedding.asyncio.run") as mock_run:
+            backfill_daily_log_embeddings.run()
+        mock_run.assert_called_once()
+        mock_run.call_args[0][0].close()
