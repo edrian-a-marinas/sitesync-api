@@ -1,5 +1,6 @@
 import logging
 
+from kombu.exceptions import OperationalError
 from sqlalchemy import String, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
@@ -10,6 +11,7 @@ from app.models.project import ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogListResponse, DailyLogResponse, DailyLogUpdate
+from app.tasks.embedding import generate_daily_log_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +113,10 @@ async def create_daily_log(project_id: int, data: DailyLogCreate, current_user: 
     await delete_pattern("dashboard:owner:*")
     await delete_pattern(f"daily_logs:{project_id}:*")
     logger.info(f"LOG_CREATE | project_id={project_id} | log_id={log.id} | submitted_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log.id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log.id} | status=failed | reason=queue unreachable")
     return await _to_response(log, db)
 
 
@@ -135,4 +141,8 @@ async def update_daily_log(project_id: int, log_id: int, data: DailyLogUpdate, c
     await delete_pattern("dashboard:owner:*")
     await delete_pattern(f"daily_logs:{project_id}:*")
     logger.info(f"LOG_UPDATE | project_id={project_id} | log_id={log_id} | updated_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log.id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return await _to_response(log, db)

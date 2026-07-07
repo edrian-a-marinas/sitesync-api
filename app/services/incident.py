@@ -1,5 +1,6 @@
 import logging
 
+from kombu.exceptions import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
@@ -9,6 +10,7 @@ from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.incident import IncidentCreate, IncidentUpdate
+from app.tasks.embedding import generate_daily_log_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,10 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
     logger.info(
         f"INCIDENT_CREATE | log_id={log_id} | incident_id={incident.id} | reported_by={current_user.id} | severity={data.severity} | status=success"
     )
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return incident
 
 
@@ -101,6 +107,10 @@ async def update_incident(
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_pattern("dashboard:owner:*")
     logger.info(f"INCIDENT_UPDATE | log_id={log_id} | incident_id={incident_id} | updated_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return incident
 
 
@@ -120,4 +130,8 @@ async def delete_incident(project_id: int, log_id: int, incident_id: int, curren
     await delete_cache(f"dashboard:manager:aggregate:{current_user.id}")
     await delete_pattern("dashboard:owner:*")
     logger.info(f"INCIDENT_DELETE | log_id={log_id} | incident_id={incident_id} | deleted_by={current_user.id} | status=success")
+    try:
+        generate_daily_log_embedding.delay(log_id)
+    except OperationalError:
+        logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
     return True

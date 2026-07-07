@@ -39,6 +39,12 @@ def get_frontend_label() -> str:
     return "PROD"
 
 
+def get_celery_label() -> str:
+    if settings.AWS_REGION and settings.AWS_ACCOUNT_ID:
+        return "PROD"
+    return "DEV"
+
+
 async def check_connections() -> dict:
     results = {}
 

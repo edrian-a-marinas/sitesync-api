@@ -5,6 +5,7 @@ limiter.enabled = False
 from datetime import date
 
 import pytest_asyncio
+import sqlalchemy as sa
 from fastapi import FastAPI, HTTPException, status
 from fastapi.exceptions import RequestValidationError
 from httpx import ASGITransport, AsyncClient
@@ -57,6 +58,7 @@ async def test_engine():
         connect_args={"statement_cache_size": 0},
     )
     async with engine.begin() as conn:
+        await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield engine
