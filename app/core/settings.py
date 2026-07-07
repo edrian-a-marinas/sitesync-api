@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     REDIS_CACHE_URL: str = "redis://localhost:6379/1"
 
     GROQ_API_KEY: str
+    WEBHOOK_URL: Optional[str] = None
 
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
     ALLOWED_HOSTS: str = "localhost,127.0.0.1"

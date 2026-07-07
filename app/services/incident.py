@@ -11,6 +11,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.schemas.incident import IncidentCreate, IncidentUpdate
 from app.tasks.embedding import generate_daily_log_embedding
+from app.tasks.webhook import send_incident_webhook
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,21 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
         generate_daily_log_embedding.delay(log_id)
     except OperationalError:
         logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
+    if incident.severity == "High":
+        try:
+            send_incident_webhook.delay(
+                {
+                    "event": "incident.logged",
+                    "incident_id": incident.id,
+                    "project_id": project_id,
+                    "daily_log_id": log_id,
+                    "severity": incident.severity,
+                    "description": incident.description,
+                    "reported_by": current_user.id,
+                }
+            )
+        except OperationalError:
+            logger.error(f"WEBHOOK | incident_id={incident.id} | status=failed | reason=queue unreachable")
     return incident
 
 
