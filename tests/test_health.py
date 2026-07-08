@@ -99,6 +99,24 @@ class TestCeleryHealthCheck:
             assert data["celery"] == "disconnected"
 
 
+class TestWebhookHealthCheck:
+    async def test_webhook_health_check_connected(self, health_client):
+        with patch("app.routers.health.requests.head") as mock_head:
+            mock_head.return_value = MagicMock(status_code=200)
+            response = await health_client.get("/health/webhook")
+            data = response.json()
+            assert response.status_code == 200
+            assert data["webhook"] == "connected"
+
+    async def test_webhook_health_check_disconnected(self, health_client):
+        with patch("app.routers.health.requests.head") as mock_head:
+            mock_head.side_effect = Exception("connection refused")
+            response = await health_client.get("/health/webhook")
+            data = response.json()
+            assert response.status_code == 503
+            assert data["webhook"] == "disconnected"
+
+
 class TestGroqHealthCheck:
     async def test_groq_health_check_connected(self, health_client):
         mock_response = MagicMock()

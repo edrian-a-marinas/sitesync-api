@@ -2,6 +2,7 @@ import asyncio
 import time
 
 import httpx
+import requests
 from fastapi import APIRouter, Response, status
 from sqlalchemy import text
 
@@ -72,6 +73,20 @@ async def celery_health(response: Response):
     except Exception as e:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "celery": "disconnected", "detail": str(e)}
+
+
+@router.get("/webhook")
+async def webhook_health(response: Response):
+    try:
+        start = time.monotonic()
+        res = requests.head(settings.WEBHOOK_URL, timeout=3)
+        latency_ms = round((time.monotonic() - start) * 1000, 2)
+        if res.status_code >= 500:
+            raise requests.RequestException(f"status_code={res.status_code}")
+        return {"status": "ok", "webhook": "connected", "latency_ms": latency_ms}
+    except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "error", "webhook": "disconnected", "detail": str(e)}
 
 
 @router.get("/groq")
