@@ -24,7 +24,7 @@ from app.core.logging import (
 )
 from app.core.middleware import configure_middlewares
 from app.core.settings import settings
-from app.routers import all_routers, auth_router
+from app.routers import all_routers, auth_router, ws_router
 from app.routers.health import router as health_router
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ configure_limiter(app)
 API_PREFIX = "/api/v1"
 for router in all_routers:
     # DEMO FEATURE: auth_router excluded so login/register work without a token; remove this if-check if demo mode is retired
-    if router is auth_router:
+    if router in (auth_router, ws_router):
         app.include_router(router, prefix=API_PREFIX)
     else:
         app.include_router(router, prefix=API_PREFIX, dependencies=[Depends(block_demo_writes)])
