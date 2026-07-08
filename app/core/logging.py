@@ -46,6 +46,13 @@ def get_celery_label() -> str:
     return "DEV"
 
 
+def get_mongo_label() -> str:
+    url = settings.MONGO_URL
+    if "localhost" in url or "127.0.0.1" in url:
+        return "DEV"
+    return "PROD"
+
+
 async def check_connections() -> dict:
     results = {}
 

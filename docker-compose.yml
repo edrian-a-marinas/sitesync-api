@@ -1,9 +1,21 @@
 services:
+
   redis:
     image: redis:7
     restart: always
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongo:
+    image: mongo:8
+    restart: always
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -20,8 +32,11 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       REDIS_URL: ${REDIS_URL}
       REDIS_CACHE_URL: ${REDIS_CACHE_URL}
+      MONGO_URL: ${MONGO_URL}
     depends_on:
       redis:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
 
   celery_worker:
@@ -37,6 +52,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+        
   celery_beat:
     build: .
     restart: always
@@ -50,3 +66,6 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
+volumes:
+  mongo_data:
