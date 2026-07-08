@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+import requests
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,7 +10,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.cache import redis_client
 from app.core.celery import celery_app
-from app.core.mongo import mongo_client
+from app.core.mongo import get_mongo_client
 from app.core.settings import settings
 from app.database import AsyncSessionLocal
 
@@ -46,6 +47,13 @@ def get_celery_label() -> str:
     return "DEV"
 
 
+def get_mongo_label() -> str:
+    url = settings.MONGO_URL
+    if "localhost" in url or "127.0.0.1" in url:
+        return "DEV"
+    return "PROD"
+
+
 async def check_connections() -> dict:
     results = {}
 
@@ -72,8 +80,13 @@ async def check_connections() -> dict:
         results["celery"] = "unreachable"
 
     try:
-        await mongo_client.admin.command("ping")
+        await get_mongo_client().admin.command("ping")
         results["mongo"] = "connected"
     except Exception:
         results["mongo"] = "unreachable"
+    try:
+        response = requests.head(settings.WEBHOOK_URL, timeout=3)
+        results["webhook"] = "connected" if response.status_code < 500 else "unreachable"
+    except Exception:
+        results["webhook"] = "unreachable"
     return results

@@ -14,6 +14,7 @@ from app.core.logging import http_exception_handler, validation_exception_handle
 from app.core.security import hash_password
 from app.core.settings import settings
 from app.database import get_db
+from app.models.ai_query import AIQuery
 from app.models.user import User
 from app.routers import all_routers, auth_router
 
@@ -80,6 +81,7 @@ async def seed_demo_users(test_session_factory, seed_users):
     yield {"owner": demo_owner, "manager": demo_manager, "worker": demo_worker}
     async with test_session_factory() as session:
         async with session.begin():
+            await session.execute(delete(AIQuery).where(AIQuery.user_id.in_([demo_owner.id, demo_manager.id, demo_worker.id])))
             await session.execute(delete(User).where(User.id.in_([demo_owner.id, demo_manager.id, demo_worker.id])))
 
 
@@ -99,7 +101,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only"
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
     async def test_demo_manager_cannot_patch(self, demo_client: AsyncClient, seed_demo_users):
         token = await get_token(demo_client, seed_demo_users["manager"].email, "demo1234")
@@ -109,7 +111,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only"
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
     async def test_demo_worker_cannot_patch(self, demo_client: AsyncClient, seed_demo_users):
         token = await get_token(demo_client, seed_demo_users["worker"].email, "demo1234")
@@ -119,7 +121,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only"
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
 
 class TestDemoReadAllowed:
@@ -139,3 +141,47 @@ class TestDemoReadAllowed:
         )
         assert res.status_code == 200
         assert res.json()["is_demo"] is True
+
+
+class TestDemoAllowedWrites:
+    async def test_demo_owner_can_trigger_ai_query(self, demo_client: AsyncClient, seed_demo_users):
+        token = await get_token(demo_client, seed_demo_users["owner"].email, "demo1234")
+        res = await demo_client.post(
+            "/api/v1/ai/query",
+            json={"question": "How many active projects are there?"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code != 403
+
+    async def test_demo_owner_can_trigger_ml_retrain(self, demo_client: AsyncClient, seed_demo_users):
+        token = await get_token(demo_client, seed_demo_users["owner"].email, "demo1234")
+        res = await demo_client.post(
+            "/api/v1/ml/retrain",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code != 403
+
+    async def test_demo_manager_still_blocked_from_ai_query(self, demo_client: AsyncClient, seed_demo_users):
+        token = await get_token(demo_client, seed_demo_users["manager"].email, "demo1234")
+        res = await demo_client.post(
+            "/api/v1/ai/query",
+            json={"question": "How many active projects are there?"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 403
+
+    async def test_demo_owner_can_generate_report(self, demo_client: AsyncClient, seed_demo_users):
+        token = await get_token(demo_client, seed_demo_users["owner"].email, "demo1234")
+        res = await demo_client.post(
+            "/api/v1/reports/1/generate",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code != 403
+
+    async def test_demo_manager_still_blocked_from_generate_report(self, demo_client: AsyncClient, seed_demo_users):
+        token = await get_token(demo_client, seed_demo_users["manager"].email, "demo1234")
+        res = await demo_client.post(
+            "/api/v1/reports/1/generate",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 403

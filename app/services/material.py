@@ -106,7 +106,12 @@ async def create_material(project_id: int, log_id: int, data: MaterialCreate, cu
                     type="budget_overrun",
                     title="Budget Overrun",
                     message=f"Project '{project.name}' has exceeded its budget.",
-                    data={"project_id": project_id, "total_budget": float(project.total_budget), "total_spent": spent_after},
+                    data={
+                        "project_id": project_id,
+                        "project_name": project.name,
+                        "total_budget": float(project.total_budget),
+                        "total_spent": spent_after,
+                    },
                     db=db,
                 )
             except Exception as e:

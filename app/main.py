@@ -18,12 +18,13 @@ from app.core.logging import (
     get_celery_label,
     get_db_label,
     get_frontend_label,
+    get_mongo_label,
     http_exception_handler,
     validation_exception_handler,
 )
 from app.core.middleware import configure_middlewares
 from app.core.settings import settings
-from app.routers import all_routers, auth_router
+from app.routers import all_routers, auth_router, ws_router
 from app.routers.health import router as health_router
 
 logger = logging.getLogger(__name__)
@@ -35,10 +36,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info(f"APP | ratelimit_enabled={settings.RATELIMIT_ENABLED} | debug={settings.DEBUG} | env loaded")
 
-    logger.info(f"Server | DB={get_db_label()} | frontend={get_frontend_label()} | celery={get_celery_label()} | env loaded")
+    logger.info(
+        f"Server | DB={get_db_label()} | frontend={get_frontend_label()} | celery={get_celery_label()} | mongo={get_mongo_label()} | env loaded"
+    )
 
     conns = await check_connections()
-    logger.info(f"Conn   | db={conns['db']} | broker={conns['broker']} | cache={conns['cache']} | celery={conns['celery']} | mongo={conns['mongo']}")
+
+    logger.info(
+        f"Conn   | db={conns['db']} | broker={conns['broker']} | cache={conns['cache']} | celery={conns['celery']} | mongo={conns['mongo']} | webhook={conns['webhook']}"
+    )
 
     yield
 
@@ -55,7 +61,7 @@ configure_limiter(app)
 API_PREFIX = "/api/v1"
 for router in all_routers:
     # DEMO FEATURE: auth_router excluded so login/register work without a token; remove this if-check if demo mode is retired
-    if router is auth_router:
+    if router in (auth_router, ws_router):
         app.include_router(router, prefix=API_PREFIX)
     else:
         app.include_router(router, prefix=API_PREFIX, dependencies=[Depends(block_demo_writes)])
