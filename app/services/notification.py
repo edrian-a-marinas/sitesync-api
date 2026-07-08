@@ -99,6 +99,15 @@ async def mark_as_read(notification_id: str, user_id: int) -> bool:
     return True
 
 
+async def mark_all_as_read(user_id: int) -> int:
+    result = await notifications_collection.update_many(
+        {"user_id": user_id, "is_read": False},
+        {"$set": {"is_read": True}},
+    )
+    logger.info(f"NOTIFICATION_READ_ALL | user_id={user_id} | modified_count={result.modified_count} | status=success")
+    return result.modified_count
+
+
 async def get_unread_count(user_id: int) -> int:
     count = await notifications_collection.count_documents({"user_id": user_id, "is_read": False})
     logger.info(f"NOTIFICATION_UNREAD_COUNT | user_id={user_id} | count={count}")
