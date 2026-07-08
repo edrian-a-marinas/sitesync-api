@@ -1,15 +1,18 @@
 import logging
 
 from kombu.exceptions import OperationalError
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.models.daily_log import DailyLog
 from app.models.material import Material
-from app.models.project import ProjectAssignment
+from app.models.project import Project, ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.material import MaterialCreate, MaterialUpdate
+from app.services.notification import notify_project_stakeholders
 from app.tasks.embedding import generate_daily_log_embedding
 
 logger = logging.getLogger(__name__)
@@ -73,6 +76,14 @@ async def _check_manager_assigned(project_id: int, current_user: User, db: Async
 async def create_material(project_id: int, log_id: int, data: MaterialCreate, current_user: User, db: AsyncSession) -> Material | None:
     if not await _check_manager_assigned(project_id, current_user, db):
         return None
+    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    spent_before = (
+        await db.execute(
+            select(func.coalesce(func.sum(Material.quantity * Material.unit_cost), 0))
+            .join(DailyLog, DailyLog.id == Material.daily_log_id)
+            .where(DailyLog.project_id == project_id)
+        )
+    ).scalar()
     material = Material(**data.model_dump(), daily_log_id=log_id)
     db.add(material)
     await db.commit()
@@ -86,6 +97,20 @@ async def create_material(project_id: int, log_id: int, data: MaterialCreate, cu
         generate_daily_log_embedding.delay(log_id)
     except OperationalError:
         logger.error(f"EMBEDDING | log_id={log_id} | status=failed | reason=queue unreachable")
+    if project:
+        spent_after = float(spent_before) + float(material.quantity) * float(material.unit_cost)
+        if float(spent_before) <= float(project.total_budget) < spent_after:
+            try:
+                await notify_project_stakeholders(
+                    project_id=project_id,
+                    type="budget_overrun",
+                    title="Budget Overrun",
+                    message=f"Project '{project.name}' has exceeded its budget.",
+                    data={"project_id": project_id, "total_budget": float(project.total_budget), "total_spent": spent_after},
+                    db=db,
+                )
+            except Exception as e:
+                logger.error(f"NOTIFICATION | project_id={project_id} | status=failed | reason={str(e)}")
     return material
 
 
