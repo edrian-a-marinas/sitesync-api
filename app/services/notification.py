@@ -61,6 +61,7 @@ def notify_project_stakeholders_sync(project_id: int, type: str, title: str, mes
 
 # ==================== Used by routers ====================
 async def create_notification(user_id: int, type: str, title: str, message: str, data: dict | None = None) -> dict:
+    now = datetime.now(timezone.utc)
     doc = {
         "user_id": user_id,
         "type": type,
@@ -68,10 +69,11 @@ async def create_notification(user_id: int, type: str, title: str, message: str,
         "message": message,
         "data": data or {},
         "is_read": False,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": now,
     }
     result = await notifications_collection.insert_one(doc)
     doc["_id"] = str(result.inserted_id)
+    doc["created_at"] = now.isoformat()
     logger.info(f"NOTIFICATION_CREATE | user_id={user_id} | type={type} | notification_id={doc['_id']} | status=success")
     return doc
 

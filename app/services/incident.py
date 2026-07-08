@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.models.daily_log import DailyLog
 from app.models.incident import Incident
-from app.models.project import ProjectAssignment, WorkerAssignment
+from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.incident import IncidentCreate, IncidentUpdate
@@ -71,6 +72,8 @@ async def get_incidents(project_id: int, log_id: int, current_user: User, db: As
 async def create_incident(project_id: int, log_id: int, data: IncidentCreate, current_user: User, db: AsyncSession) -> Incident | None:
     if not await _check_manager_assigned(project_id, current_user, db):
         return None
+    project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
+    daily_log = (await db.execute(select(DailyLog).where(DailyLog.id == log_id))).scalar_one_or_none()
     incident = Incident(**data.model_dump(), daily_log_id=log_id, reported_by=current_user.id)
     db.add(incident)
     await db.commit()
@@ -108,7 +111,13 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
             type="incident",
             title="Incident Logged",
             message=incident.description,
-            data={"incident_id": incident.id, "daily_log_id": log_id, "severity": incident.severity},
+            data={
+                "incident_id": incident.id,
+                "daily_log_id": log_id,
+                "severity": incident.severity,
+                "project_name": project.name if project else None,
+                "log_date": daily_log.log_date.isoformat() if daily_log else None,
+            },
             db=db,
         )
     except Exception as e:

@@ -245,7 +245,7 @@ def generate_report_sync(project_id: int, generated_by: int | None, db, source: 
                 type="report_ready",
                 title="Weekly Report Ready",
                 message=f"Weekly report for {week_start} to {week_end} is ready.",
-                data={"report_id": report.id, "week_start": str(week_start), "week_end": str(week_end)},
+                data={"report_id": report.id, "week_start": str(week_start), "week_end": str(week_end), "project_name": project.name},
                 db=db,
             )
         except Exception as e:
