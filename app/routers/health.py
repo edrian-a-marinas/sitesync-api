@@ -7,6 +7,7 @@ from sqlalchemy import text
 
 from app.core.cache import redis_client
 from app.core.celery import celery_app
+from app.core.mongo import mongo_client
 from app.core.settings import settings
 from app.database import AsyncSessionLocal
 
@@ -48,6 +49,18 @@ async def redis_health(response: Response):
     except Exception as e:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "error", "redis": "disconnected", "detail": str(e)}
+
+
+@router.get("/mongo")
+async def mongo_health(response: Response):
+    try:
+        start = time.monotonic()
+        await mongo_client.admin.command("ping")
+        latency_ms = round((time.monotonic() - start) * 1000, 2)
+        return {"status": "ok", "mongo": "connected", "latency_ms": latency_ms}
+    except Exception as e:
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "error", "mongo": "disconnected", "detail": str(e)}
 
 
 @router.get("/celery")
