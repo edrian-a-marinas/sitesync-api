@@ -14,7 +14,7 @@ def get_mongo_client() -> AsyncIOMotorClient:
 
 
 def get_notifications_collection():
-    return get_mongo_client().get_database("sitesync").get_collection("notifications")
+    return get_mongo_client().get_default_database().get_collection("notifications")
 
 
 class _NotificationsCollectionProxy:
