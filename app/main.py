@@ -18,6 +18,7 @@ from app.core.logging import (
     get_celery_label,
     get_db_label,
     get_frontend_label,
+    get_mongo_label,
     http_exception_handler,
     validation_exception_handler,
 )
@@ -35,7 +36,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info(f"APP | ratelimit_enabled={settings.RATELIMIT_ENABLED} | debug={settings.DEBUG} | env loaded")
 
-    logger.info(f"Server | DB={get_db_label()} | frontend={get_frontend_label()} | celery={get_celery_label()} | env loaded")
+    logger.info(
+        f"Server | DB={get_db_label()} | frontend={get_frontend_label()} | celery={get_celery_label()} | mongo={get_mongo_label()} | env loaded"
+    )
 
     conns = await check_connections()
     logger.info(f"Conn   | db={conns['db']} | broker={conns['broker']} | cache={conns['cache']} | celery={conns['celery']} | mongo={conns['mongo']}")
