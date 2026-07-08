@@ -33,6 +33,10 @@ jobs:
         image: redis:7
         ports:
           - 6379:6379
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +65,7 @@ jobs:
           GROQ_API_KEY: test-groq-key
           REDIS_URL: redis://localhost:6379/0
           REDIS_CACHE_URL: redis://localhost:6379/1
+          MONGO_URL: mongodb://localhost:27017
           DEBUG: "true"
           ALGORITHM: HS256
           ACCESS_TOKEN_EXPIRE_MINUTES: "30"
