@@ -17,6 +17,7 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = "redis://localhost:6379/0"
     REDIS_CACHE_URL: str = "redis://localhost:6379/1"
+    MONGO_URL: str = "mongodb://localhost:27017"
 
     GROQ_API_KEY: str
     WEBHOOK_URL: Optional[str] = None
