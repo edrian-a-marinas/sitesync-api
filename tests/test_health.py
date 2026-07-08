@@ -53,7 +53,8 @@ class TestRedisHealthCheck:
 
 class TestMongoHealthCheck:
     async def test_mongo_health_check_connected(self, health_client):
-        with patch("app.routers.health.mongo_client") as mock_mongo:
+        with patch("app.routers.health.get_mongo_client") as mock_get_client:
+            mock_mongo = mock_get_client.return_value
             mock_mongo.admin.command = AsyncMock(return_value={"ok": 1})
             response = await health_client.get("/health/mongo")
             assert response.status_code == 200
@@ -62,7 +63,8 @@ class TestMongoHealthCheck:
             assert data["mongo"] == "connected"
 
     async def test_mongo_health_check_disconnected(self, health_client):
-        with patch("app.routers.health.mongo_client") as mock_mongo:
+        with patch("app.routers.health.get_mongo_client") as mock_get_client:
+            mock_mongo = mock_get_client.return_value
             mock_mongo.admin.command = AsyncMock(side_effect=Exception("connection refused"))
             response = await health_client.get("/health/mongo")
             assert response.status_code == 503

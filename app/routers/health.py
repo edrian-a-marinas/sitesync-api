@@ -7,7 +7,7 @@ from sqlalchemy import text
 
 from app.core.cache import redis_client
 from app.core.celery import celery_app
-from app.core.mongo import mongo_client
+from app.core.mongo import get_mongo_client
 from app.core.settings import settings
 from app.database import AsyncSessionLocal
 
@@ -55,7 +55,7 @@ async def redis_health(response: Response):
 async def mongo_health(response: Response):
     try:
         start = time.monotonic()
-        await mongo_client.admin.command("ping")
+        await get_mongo_client().admin.command("ping")
         latency_ms = round((time.monotonic() - start) * 1000, 2)
         return {"status": "ok", "mongo": "connected", "latency_ms": latency_ms}
     except Exception as e:
