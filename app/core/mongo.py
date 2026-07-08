@@ -10,7 +10,12 @@ logger = logging.getLogger(__name__)
 
 @lru_cache
 def get_mongo_client() -> AsyncIOMotorClient:
-    return AsyncIOMotorClient(settings.MONGO_URL)
+    return AsyncIOMotorClient(
+        settings.MONGO_URL,
+        serverSelectionTimeoutMS=3000,
+        connectTimeoutMS=3000,
+        socketTimeoutMS=3000,
+    )
 
 
 def get_notifications_collection():
