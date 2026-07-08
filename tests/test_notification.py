@@ -8,6 +8,7 @@ from sqlalchemy import delete
 from app.models.project import Project, ProjectAssignment
 from app.services.notification import (
     create_notification,
+    delete_notification,
     get_notifications,
     get_unread_count,
     mark_as_read,
@@ -112,6 +113,18 @@ class TestNotificationService:
         with patch("app.services.notification.notifications_collection.count_documents", new=AsyncMock(return_value=3)):
             count = await get_unread_count(user_id=1)
         assert count == 3
+
+    async def test_delete_notification_success(self):
+        mock_result = MagicMock(deleted_count=1)
+        with patch("app.services.notification.notifications_collection.delete_one", new=AsyncMock(return_value=mock_result)):
+            success = await delete_notification("64b7f9f9f9f9f9f9f9f9f9f9", user_id=1)
+        assert success is True
+
+    async def test_delete_notification_not_found_returns_false(self):
+        mock_result = MagicMock(deleted_count=0)
+        with patch("app.services.notification.notifications_collection.delete_one", new=AsyncMock(return_value=mock_result)):
+            success = await delete_notification("64b7f9f9f9f9f9f9f9f9f9f9", user_id=1)
+        assert success is False
 
 
 # ---------------------------------------------------------------------------
@@ -228,4 +241,15 @@ class TestNotificationRouter:
     async def test_mark_as_read_not_found_returns_404(self, owner_client: AsyncClient):
         with patch("app.routers.notification.mark_as_read", new=AsyncMock(return_value=False)):
             res = await owner_client.patch("/api/v1/notifications/64b7f9f9f9f9f9f9f9f9f9f9/read")
+        assert res.status_code == 404
+
+    async def test_delete_notification_success(self, owner_client: AsyncClient):
+        with patch("app.routers.notification._delete_notification", new=AsyncMock(return_value=True)):
+            res = await owner_client.delete("/api/v1/notifications/64b7f9f9f9f9f9f9f9f9f9f9")
+        assert res.status_code == 200
+        assert res.json() == {"status": "deleted"}
+
+    async def test_delete_notification_not_found_returns_404(self, owner_client: AsyncClient):
+        with patch("app.routers.notification._delete_notification", new=AsyncMock(return_value=False)):
+            res = await owner_client.delete("/api/v1/notifications/64b7f9f9f9f9f9f9f9f9f9f9")
         assert res.status_code == 404

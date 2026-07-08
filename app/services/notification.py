@@ -103,3 +103,14 @@ async def get_unread_count(user_id: int) -> int:
     count = await notifications_collection.count_documents({"user_id": user_id, "is_read": False})
     logger.info(f"NOTIFICATION_UNREAD_COUNT | user_id={user_id} | count={count}")
     return count
+
+
+async def delete_notification(notification_id: str, user_id: int) -> bool:
+    result = await notifications_collection.delete_one(
+        {"_id": ObjectId(notification_id), "user_id": user_id},
+    )
+    if result.deleted_count == 0:
+        logger.warning(f"NOTIFICATION_DELETE | user_id={user_id} | notification_id={notification_id} | status=failed | reason=not found")
+        return False
+    logger.info(f"NOTIFICATION_DELETE | user_id={user_id} | notification_id={notification_id} | status=success")
+    return True
