@@ -1,10 +1,10 @@
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
+from app.models.embedding import DailyLogEmbedding
 from app.models.equipment import Equipment
 from app.models.incident import Incident
 from app.models.material import Material
-from app.models.notification import Notification
 from app.models.project import (
     Project,
     ProjectAssignment,
@@ -24,6 +24,7 @@ __all__ = [
     "ProjectAssignment",
     "WorkerAssignment",
     "DailyLog",
+    "DailyLogEmbedding",
     "Attendance",
     "Material",
     "Equipment",
@@ -31,5 +32,4 @@ __all__ = [
     "SitePhoto",
     "Report",
     "AIQuery",
-    "Notification",
 ]

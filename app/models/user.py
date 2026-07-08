@@ -33,4 +33,3 @@ class User(Base):
     site_photos: Mapped[list["SitePhoto"]] = relationship("SitePhoto", back_populates="uploaded_by_user")
     reports: Mapped[list["Report"]] = relationship("Report", back_populates="generated_by_user")
     ai_queries: Mapped[list["AIQuery"]] = relationship("AIQuery", back_populates="user")
-    notifications: Mapped[list["Notification"]] = relationship("Notification", back_populates="user")
