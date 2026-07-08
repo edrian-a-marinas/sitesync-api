@@ -84,6 +84,8 @@ async def get_notifications(user_id: int, page: int = 1, page_size: int = 20) ->
     results = []
     async for doc in cursor:
         doc["_id"] = str(doc["_id"])
+        if isinstance(doc.get("created_at"), datetime) and doc["created_at"].tzinfo is None:
+            doc["created_at"] = doc["created_at"].replace(tzinfo=timezone.utc)
         results.append(doc)
     logger.info(f"NOTIFICATION_LIST | user_id={user_id} | page={page} | count={len(results)} | status=success")
     return results
