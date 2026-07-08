@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Server | DB={get_db_label()} | frontend={get_frontend_label()} | celery={get_celery_label()} | env loaded")
 
     conns = await check_connections()
-    logger.info(f"Conn   | db={conns['db']} | broker={conns['broker']} | cache={conns['cache']} | celery={conns['celery']}")
+    logger.info(f"Conn   | db={conns['db']} | broker={conns['broker']} | cache={conns['cache']} | celery={conns['celery']} | mongo={conns['mongo']}")
 
     yield
 

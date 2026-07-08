@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.core.cache import redis_client
 from app.core.celery import celery_app
+from app.core.mongo import mongo_client
 from app.core.settings import settings
 from app.database import AsyncSessionLocal
 
@@ -69,4 +70,10 @@ async def check_connections() -> dict:
         results["celery"] = "connected"
     except Exception:
         results["celery"] = "unreachable"
+
+    try:
+        await mongo_client.admin.command("ping")
+        results["mongo"] = "connected"
+    except Exception:
+        results["mongo"] = "unreachable"
     return results

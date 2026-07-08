@@ -7,6 +7,7 @@ from app.routers.equipment import router as equipment_router
 from app.routers.incident import router as incident_router
 from app.routers.material import router as material_router
 from app.routers.ml import router as ml_router
+from app.routers.notification import router as notification_router
 from app.routers.project import router as project_router
 from app.routers.report import router as report_router
 from app.routers.site_photo import router as site_photo_router
@@ -28,6 +29,7 @@ all_routers = [
     report_router,
     ml_router,
     site_photo_router,
+    notification_router,
     worker_router,
     ws_router,
 ]
