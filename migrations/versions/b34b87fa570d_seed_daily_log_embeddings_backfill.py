@@ -6,10 +6,8 @@ Create Date: 2026-07-07 00:05:59.498390
 
 """
 from typing import Sequence, Union
-
 from alembic import op
 import sqlalchemy as sa
-from sentence_transformers import SentenceTransformer
 
 # revision identifiers, used by Alembic.
 revision: str = 'b34b87fa570d'
@@ -58,6 +56,7 @@ def _build_chunk_text(conn, daily_log_id, log_date, weather, work_accomplished, 
 
 def upgrade() -> None:
     """Backfill embeddings for all existing daily_logs that don't have one yet."""
+    from sentence_transformers import SentenceTransformer
     conn = op.get_bind()
     model = SentenceTransformer("all-MiniLM-L6-v2")
 
