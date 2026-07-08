@@ -101,7 +101,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant and Analytics pages only."
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
     async def test_demo_manager_cannot_patch(self, demo_client: AsyncClient, seed_demo_users):
         token = await get_token(demo_client, seed_demo_users["manager"].email, "demo1234")
@@ -111,7 +111,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant and Analytics pages only."
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
     async def test_demo_worker_cannot_patch(self, demo_client: AsyncClient, seed_demo_users):
         token = await get_token(demo_client, seed_demo_users["worker"].email, "demo1234")
@@ -121,7 +121,7 @@ class TestDemoWriteBlocked:
             headers={"Authorization": f"Bearer {token}"},
         )
         assert res.status_code == 403
-        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant and Analytics pages only."
+        assert res.json()["detail"] == "Demo accounts are read-only. Owner demo can use AI Assistant, Analytics, and generate reports only."
 
 
 class TestDemoReadAllowed:

@@ -12,26 +12,22 @@ from app.models.project import Project, ProjectAssignment
 
 logger = logging.getLogger(__name__)
 
+
 # ==================== Cross-service dispatch (reusable) ====================
-
-
 async def notify_project_stakeholders(project_id: int, type: str, title: str, message: str, data: dict, db: AsyncSession) -> None:
     project = (await db.execute(select(Project).where(Project.id == project_id))).scalar_one_or_none()
     if not project:
         logger.warning(f"NOTIFICATION_DISPATCH | project_id={project_id} | status=failed | reason=project not found")
         return
-
     recipient_ids = {project.owner_id}
     assignments = (await db.execute(select(ProjectAssignment.user_id).where(ProjectAssignment.project_id == project_id))).scalars().all()
     recipient_ids.update(assignments)
-
     for user_id in recipient_ids:
         try:
             notification = await create_notification(user_id=user_id, type=type, title=title, message=message, data=data)
             await manager.send_to_user(user_id, notification)
         except Exception as e:
             logger.error(f"NOTIFICATION_DISPATCH | project_id={project_id} | user_id={user_id} | status=failed | reason={str(e)}")
-
     logger.info(f"NOTIFICATION_DISPATCH | project_id={project_id} | type={type} | recipients={len(recipient_ids)} | status=success")
 
 
@@ -42,7 +38,6 @@ def notify_project_stakeholders_sync(project_id: int, type: str, title: str, mes
     if not project:
         logger.warning(f"NOTIFICATION_DISPATCH | project_id={project_id} | status=failed | reason=project not found")
         return
-
     recipient_ids = {project.owner_id}
     assignments = db.execute(select(ProjectAssignment.user_id).where(ProjectAssignment.project_id == project_id)).scalars().all()
     recipient_ids.update(assignments)

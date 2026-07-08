@@ -84,11 +84,9 @@ async def check_connections() -> dict:
         results["mongo"] = "connected"
     except Exception:
         results["mongo"] = "unreachable"
-
     try:
         response = requests.head(settings.WEBHOOK_URL, timeout=3)
         results["webhook"] = "connected" if response.status_code < 500 else "unreachable"
     except Exception:
         results["webhook"] = "unreachable"
-
     return results
