@@ -10,6 +10,7 @@ from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.incident import IncidentCreate, IncidentUpdate
+from app.services.notification import notify_project_stakeholders
 from app.tasks.embedding import generate_daily_log_embedding
 from app.tasks.webhook import send_incident_webhook
 
@@ -100,6 +101,18 @@ async def create_incident(project_id: int, log_id: int, data: IncidentCreate, cu
             )
         except OperationalError:
             logger.error(f"WEBHOOK | incident_id={incident.id} | status=failed | reason=queue unreachable")
+
+    try:
+        await notify_project_stakeholders(
+            project_id=project_id,
+            type="incident",
+            title="Incident Logged",
+            message=incident.description,
+            data={"incident_id": incident.id, "daily_log_id": log_id, "severity": incident.severity},
+            db=db,
+        )
+    except Exception as e:
+        logger.error(f"NOTIFICATION | incident_id={incident.id} | status=failed | reason={str(e)}")
     return incident
 
 

@@ -14,6 +14,7 @@ from app.models.project import Project, ProjectAssignment
 from app.models.report import Report
 from app.models.role import Role
 from app.models.user import User
+from app.services.notification import notify_project_stakeholders_sync
 from app.services.s3 import delete_file, generate_presigned_url, upload_file
 from app.utils.pdf_builder import build_report_pdf
 
@@ -238,6 +239,17 @@ def generate_report_sync(project_id: int, generated_by: int | None, db, source: 
         db.commit()
         db.refresh(report)
         logger.info(f"REPORT | project_id={project_id} | week_start={week_start} | source={source} | generated_by={generated_by} | status=success")
+        try:
+            notify_project_stakeholders_sync(
+                project_id=project_id,
+                type="report_ready",
+                title="Weekly Report Ready",
+                message=f"Weekly report for {week_start} to {week_end} is ready.",
+                data={"report_id": report.id, "week_start": str(week_start), "week_end": str(week_end)},
+                db=db,
+            )
+        except Exception as e:
+            logger.error(f"NOTIFICATION | report_id={report.id} | status=failed | reason={str(e)}")
         return report
     except Exception as e:
         if "uq_report_project_week" in str(e):
