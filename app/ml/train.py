@@ -6,9 +6,11 @@ import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.ensemble import RandomForestRegressor as _Reg
 
-logger = logging.getLogger(__name__)
+from app.core.settings import settings
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
+MODELS_DIR = settings.ML_MODELS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def _ensure_models_dir():
