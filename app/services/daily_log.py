@@ -6,12 +6,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.daily_log import DailyLogCreate, DailyLogListResponse, DailyLogResponse, DailyLogUpdate
 from app.tasks.embedding import generate_daily_log_embedding
+
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +79,7 @@ async def get_daily_logs(
     items = [await _to_response(log, db) for log in logs]
     response = DailyLogListResponse(items=items, total=total, page=page, page_size=page_size)
     logger.info(f"DAILY_LOG | get_daily_logs | project_id={project_id} | page={page} | search={search_term} | count={len(items)} | source=db")
-    await set_cache(cache_key, response.model_dump(mode="json"), ttl=3600)
+    await set_cache(cache_key, response.model_dump(mode="json"), ttl=DEFAULT_CACHE_TTL)
     return response
 
 

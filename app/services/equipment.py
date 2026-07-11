@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, get_cache, set_cache
+from app.core.settings import settings
 from app.models.equipment import Equipment
 from app.models.project import ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -11,6 +12,8 @@ from app.models.user import User
 from app.schemas.equipment import EquipmentCreate, EquipmentUpdate
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
 
 
 async def _check_manager_assigned(project_id: int, current_user: User, db: AsyncSession) -> bool:
@@ -53,7 +56,7 @@ async def get_equipment(project_id: int, log_id: int, current_user: User, db: As
     logger.info(f"EQUIPMENT_GET | log_id={log_id} | user_id={current_user.id} | count={len(equipment)} | source=db")
 
     serialized = [{"id": e.id, "daily_log_id": e.daily_log_id, "name": e.name, "quantity": e.quantity, "condition": e.condition} for e in equipment]
-    await set_cache(cache_key, serialized, ttl=3600)
+    await set_cache(cache_key, serialized, ttl=DEFAULT_CACHE_TTL)
     return equipment
 
 

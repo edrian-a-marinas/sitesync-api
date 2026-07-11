@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.core.settings import settings
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.project import ProjectAssignment, WorkerAssignment
@@ -14,7 +15,7 @@ from app.models.user import User
 from app.schemas.attendance import AttendanceCreate
 from app.tasks.embedding import generate_daily_log_embedding
 
-logger = logging.getLogger(__name__)
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +105,7 @@ async def get_attendance(project_id: int, log_id: int, current_user: User, db: A
 
     attendance = result.scalars().all()
     serialized = [{"id": a.id, "daily_log_id": a.daily_log_id, "worker_id": a.worker_id, "hours_worked": float(a.hours_worked)} for a in attendance]
-    await set_cache(cache_key, serialized, ttl=3600)
+    await set_cache(cache_key, serialized, ttl=DEFAULT_CACHE_TTL)
     return attendance
 
 
@@ -137,8 +138,7 @@ async def get_my_attendance_history(project_id: int, current_user: User, db: Asy
 
     items = [{"id": a.id, "daily_log_id": a.daily_log_id, "hours_worked": float(a.hours_worked), "log_date": str(log_date)} for a, log_date in rows]
     response = {"items": items, "total": total, "page": page, "limit": limit}
-
-    await set_cache(cache_key, response, ttl=3600)
+    await set_cache(cache_key, response, ttl=DEFAULT_CACHE_TTL)
     logger.info(
         f"ATTENDANCE_HISTORY | worker_id={current_user.id} | project_id={project_id} | page={page} | total={total} | count={len(rows)} | source=db"
     )

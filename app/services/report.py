@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_pattern, get_cache, set_cache
+from app.core.settings import settings
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
@@ -17,6 +18,8 @@ from app.models.user import User
 from app.services.notification import notify_project_stakeholders_sync
 from app.services.s3 import delete_file, generate_presigned_url, upload_file
 from app.utils.pdf_builder import build_report_pdf
+
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +346,7 @@ async def get_reports(project_id: int, db: AsyncSession, page: int = 1, page_siz
             for r, first_name, last_name in rows
         ]
         data = {"items": items, "total": total, "page": page, "page_size": page_size}
-        await set_cache(cache_key, data, ttl=3600)
+        await set_cache(cache_key, data, ttl=DEFAULT_CACHE_TTL)
         return data
     except Exception as e:
         logger.error(f"REPORT | get_reports | project_id={project_id} | error={str(e)}")

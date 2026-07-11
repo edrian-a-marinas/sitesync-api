@@ -16,6 +16,8 @@ from app.models.site_photo import SitePhoto
 from app.models.user import User
 from app.services.s3 import delete_file, generate_presigned_url, upload_file
 
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
+
 logger = logging.getLogger(__name__)
 
 # PDF included for PMs can also upload supporting documentation such Material delivery receipts, etc.
@@ -166,7 +168,7 @@ async def get_site_photos(project_id: int, log_id: int, current_user: User, db: 
     result = await db.execute(select(SitePhoto).where(SitePhoto.daily_log_id == log_id))
     photos = result.scalars().all()
     response = [_build_response(p) for p in photos]
-    await set_cache(cache_key, response, ttl=3600)
+    await set_cache(cache_key, response, ttl=DEFAULT_CACHE_TTL)
     logger.info(f"SITE_PHOTO_GET | log_id={log_id} | user_id={current_user.id} | role={role_name} | source=db | count={len(photos)}")
     return response
 

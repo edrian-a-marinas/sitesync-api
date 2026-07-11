@@ -5,11 +5,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import get_cache, set_cache
+from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.project import Project, WorkerAssignment
 from app.models.user import User
 from app.schemas.daily_log import DailyLogResponse
 from app.schemas.worker import WorkerProjectResponse
+
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
+WORKER_TODAY_LOG_TTL = settings.WORKER_TODAY_LOG_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +43,7 @@ async def get_my_projects(current_user: User, db: AsyncSession) -> list[WorkerPr
         for p in projects
     ]
 
-    await set_cache(cache_key, [r.model_dump(mode="json") for r in response], ttl=3600)
+    await set_cache(cache_key, [r.model_dump(mode="json") for r in response], ttl=DEFAULT_CACHE_TTL)
     logger.info(f"WORKER | get_my_projects | user_id={current_user.id} | count={len(response)} | source=db")
     return response
 
@@ -87,6 +91,6 @@ async def get_today_log(project_id: int, current_user: User, db: AsyncSession) -
         notes=log.notes,
     )
 
-    await set_cache(cache_key, response.model_dump(mode="json"), ttl=300)
+    await set_cache(cache_key, response.model_dump(mode="json"), ttl=WORKER_TODAY_LOG_TTL)
     logger.info(f"WORKER | get_today_log | user_id={current_user.id} | project_id={project_id} | log_id={log.id} | source=db")
     return response
