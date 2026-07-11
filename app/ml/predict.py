@@ -4,9 +4,11 @@ import os
 import joblib
 import pandas as pd
 
-logger = logging.getLogger(__name__)
+from app.core.settings import settings
 
-MODELS_DIR = os.path.join(os.path.dirname(__file__), "models")
+MODELS_DIR = settings.ML_MODELS_DIR
+
+logger = logging.getLogger(__name__)
 
 
 def _load(filename: str):

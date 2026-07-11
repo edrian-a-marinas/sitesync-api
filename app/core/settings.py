@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    # .env / secrets
+    # -----------------  .env / secrets -----------------
     DATABASE_URL: str
     TEST_DATABASE_URL: str
 
@@ -31,17 +31,27 @@ class Settings(BaseSettings):
     AWS_ACCOUNT_ID: Optional[str] = None
     AWS_S3_BUCKET: Optional[str] = None
 
-    # Constants / hard coded
+    # ----------------- Constants / hard coded -----------------
+    ROW_LIMIT: int = 20
+
+    PENDING_TIMEOUT_MINUTES: int = 5
+
+    # Redis Caching invalidation TTL.
+    DEFAULT_CACHE_TTL: int = (
+        3600  # 1 hour — used by equipment, attendance, daily_log, incident, material, report, site_photo, worker projects nad ML cache
+    )
+
+    AUTH_USER_CACHE_TTL: int = 86400  # 24h TTL — cache reset on password, status, role, or profile changes.
+    ROLE_CACHE_TTL: int = 86400
+
     PROJECTS_TTL: int = 120  # seconds 2 mins
 
     OWNER_DASHBOARD_TTL: int = 60
     MANAGER_DASHBOARD_TTL: int = 60
 
-    ROW_LIMIT: int = 20
+    WORKER_TODAY_LOG_TTL: int = 300  # 5 min — worker's today log, changes more frequently
 
-    PENDING_TIMEOUT_MINUTES: int = 5
-
-    ML_CACHE_TTL: int = 3600  # 1 hour
+    # storage config / File upload
     ML_MODELS_DIR: str = "app/ml/models"
 
     ALLOWED_CONTENT_TYPES: set[str] = {"image/jpeg", "image/png", "image/webp", "application/pdf"}

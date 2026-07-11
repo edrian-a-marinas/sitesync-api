@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
+from app.core.settings import settings
 from app.models.daily_log import DailyLog
 from app.models.incident import Incident
 from app.models.project import Project, ProjectAssignment, WorkerAssignment
@@ -14,6 +15,8 @@ from app.schemas.incident import IncidentCreate, IncidentUpdate
 from app.services.notification import notify_project_stakeholders
 from app.tasks.embedding import generate_daily_log_embedding
 from app.tasks.webhook import send_incident_webhook
+
+DEFAULT_CACHE_TTL = settings.DEFAULT_CACHE_TTL
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +68,7 @@ async def get_incidents(project_id: int, log_id: int, current_user: User, db: As
         }
         for i in incidents
     ]
-    await set_cache(cache_key, serialized, ttl=3600)
+    await set_cache(cache_key, serialized, ttl=DEFAULT_CACHE_TTL)
     return incidents
 
 
