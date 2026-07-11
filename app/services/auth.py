@@ -4,7 +4,9 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import get_cache, set_cache
 from app.core.security import create_access_token, hash_password, verify_password
+from app.core.settings import settings
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.auth import LoginRequest, RegisterRequest
@@ -13,13 +15,27 @@ logger = logging.getLogger(__name__)
 
 
 async def get_role_by_name(name: str, db: AsyncSession):
+    cache_key = f"role:name:{name}"
+    cached = await get_cache(cache_key)
+    if cached:
+        return Role(**cached)
     result = await db.execute(select(Role).where(Role.name == name))
-    return result.scalar_one_or_none()
+    role = result.scalar_one_or_none()
+    if role:
+        await set_cache(cache_key, {c.name: getattr(role, c.name) for c in role.__table__.columns}, ttl=settings.ROLE_CACHE_TTL)
+    return role
 
 
 async def get_role_by_id(role_id: int, db: AsyncSession):
+    cache_key = f"role:id:{role_id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        return Role(**cached)
     result = await db.execute(select(Role).where(Role.id == role_id))
-    return result.scalar_one_or_none()
+    role = result.scalar_one_or_none()
+    if role:
+        await set_cache(cache_key, {c.name: getattr(role, c.name) for c in role.__table__.columns}, ttl=settings.ROLE_CACHE_TTL)
+    return role
 
 
 async def register_user(data: RegisterRequest, db: AsyncSession, request: Request, created_by: User) -> User:

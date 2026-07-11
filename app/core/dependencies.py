@@ -1,11 +1,14 @@
 import logging
+from datetime import datetime
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
+from app.core.cache import get_cache, set_cache
 from app.core.security import decode_access_token
+from app.core.settings import settings
 from app.database import get_db
 from app.models.role import Role
 from app.models.user import User
@@ -23,15 +26,24 @@ async def get_current_user(
     if not payload:
         logger.warning("AUTH | status=failed | reason=invalid or expired token")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-
     user_id = payload.get("sub")
+    cache_key = f"auth:user:{user_id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        if not cached.get("is_active"):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+        return User(**cached)
+
     result = await db.execute(select(User).where(User.id == int(user_id)))
     user = result.scalar_one_or_none()
-
     if not user or not user.is_active:
         logger.warning(f"AUTH | user_id={user_id} | status=failed | reason=user not found or inactive")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 
+    user_dict = {
+        c.name: (value.isoformat() if isinstance(value, datetime) else value) for c in user.__table__.columns for value in [getattr(user, c.name)]
+    }
+    await set_cache(cache_key, user_dict, ttl=settings.AUTH_USER_CACHE_TTL)
     return user
 
 

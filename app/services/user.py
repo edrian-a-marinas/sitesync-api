@@ -4,7 +4,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.core.cache import delete_pattern, get_cache, set_cache
+from app.core.cache import delete_cache, delete_pattern, get_cache, set_cache
 from app.core.security import hash_password, verify_password
 from app.models.project import Project, ProjectAssignment, WorkerAssignment
 from app.models.role import Role
@@ -144,6 +144,7 @@ async def update_user_by_id(user_id: int, data: UserUpdateRequest, current_user:
     await db.commit()
     await db.refresh(user)
     await delete_pattern(f"users:{current_user.id}:*")
+    await delete_cache(f"auth:user:{user.id}")
     logger.info(f"USER_UPDATE | user_id={user_id} | updated_by={current_user.id} | status=success")
     return user
 
@@ -163,6 +164,7 @@ async def set_user_status(user_id: int, is_active: bool, current_user: User, db:
         await db.commit()
         await db.refresh(user)
         await delete_pattern(f"users:{current_user.id}:*")
+        await delete_cache(f"auth:user:{user.id}")
         logger.info(
             f"USER_ACTIVE | role={current_role.name} | user_id={current_user.id} | is_active=False | updated_by={current_user.id} | status=success"
         )
@@ -189,6 +191,7 @@ async def set_user_status(user_id: int, is_active: bool, current_user: User, db:
     await db.commit()
     await db.refresh(user)
     await delete_pattern(f"users:{current_user.id}:*")
+    await delete_cache(f"auth:user:{user.id}")
     logger.info(f"USER_ACTIVE | user_id={user_id} | is_active={is_active} | updated_by={current_user.id} | status=success")
     return user
 
@@ -202,6 +205,7 @@ async def change_password(data: PasswordChangeRequest, current_user: User, db: A
         return False
     current_user.password_hash = hash_password(data.new_password)
     await db.commit()
+    await delete_cache(f"auth:user:{current_user.id}")
     logger.info(f"PASSWORD_CHANGE | user_id={current_user.id} | status=success")
     return True
 
@@ -241,5 +245,6 @@ async def reset_password(user_id: int, data: PasswordResetRequest, current_user:
         return None
     target_user.password_hash = hash_password(data.new_password)
     await db.commit()
+    await delete_cache(f"auth:user:{user_id}")
     logger.info(f"PASSWORD_RESET | role={current_role_name} | user_id={current_user.id} | target_id={user_id} | status=success")
     return True
