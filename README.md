@@ -59,7 +59,7 @@ flowchart LR
 ## API & Structure
 
 - **Architecture**: Monolithic FastAPI backend, layered `routers → services → schemas → models`
-- **Endpoints**: 77 REST endpoints across 15 relational tables — [Swagger Docs](https://drive.google.com/drive/folders/1T14fpvZQssFRVswHp2uzp9LEicIBZEJn?usp=sharing)
+- **Endpoints**: 77 REST endpoints across 16 relational tables — [Swagger Docs](https://drive.google.com/drive/folders/1T14fpvZQssFRVswHp2uzp9LEicIBZEJn?usp=sharing)
 - **Validation**: End-to-end type-safe validation — Zod (frontend) → Pydantic (backend) → SQLAlchemy ORM (database)
 - **Security middleware**: CORS, trusted host, GZip compression, custom security headers (HSTS, X-Frame-Options)
 - **Rate limiting**: Per-endpoint limits via SlowAPI (e.g. 10/min on writes, 30/min on reads)
