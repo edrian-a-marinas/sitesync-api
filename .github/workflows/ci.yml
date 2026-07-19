@@ -85,6 +85,7 @@ jobs:
           script: |
             cd ~/sitesync-api
             git pull origin main
+            docker system prune -af
             docker compose up -d --build
 
       # commented out because AWS ALB / Load balancers deletion (costing too much)

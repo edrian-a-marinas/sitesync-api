@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     PENDING_TIMEOUT_MINUTES: int = 5
 
+    DUPLICATE_SIMILARITY_THRESHOLD: float = 0.90
+
     # Redis Caching invalidation TTL.
     DEFAULT_CACHE_TTL: int = (
         3600  # 1 hour — used by equipment, attendance, daily_log, incident, material, report, site_photo, worker projects nad ML cache

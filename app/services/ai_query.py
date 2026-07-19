@@ -11,7 +11,7 @@ from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.attendance import Attendance
 from app.models.daily_log import DailyLog
-from app.models.embedding import DailyLogEmbedding
+from app.models.embedding import AIQueryEmbedding, DailyLogEmbedding
 from app.models.incident import Incident
 from app.models.material import Material
 from app.models.project import Project
@@ -20,6 +20,8 @@ from app.schemas.ai_query import AIQueryRequest
 from app.services.embedding import generate_embedding
 
 logger = logging.getLogger(__name__)
+
+DUPLICATE_SIMILARITY_THRESHOLD = settings.DUPLICATE_SIMILARITY_THRESHOLD  # 0.90
 
 
 # ==================== RAG ====================
@@ -37,6 +39,31 @@ class DailyLogEmbeddingRetriever(BaseRetriever):
             stmt = stmt.where(DailyLogEmbedding.project_id == self.project_id)
         rows = (await self.db.execute(stmt)).scalars().all()
         return [Document(page_content=r.content_text, metadata={"daily_log_id": r.daily_log_id, "project_id": r.project_id}) for r in rows]
+
+    def _get_relevant_documents(self, query: str) -> list[Document]:
+        raise NotImplementedError("Use async retrieval via ainvoke/aget_relevant_documents")
+
+
+class AIQueryEmbeddingRetriever(BaseRetriever):
+    """Retriever backed by ai_query_embeddings — surfaces past project-specific Q&A as context.
+    Only searches when project_id is set, since general/cross-project queries are never stored here."""
+
+    db: AsyncSession
+    project_id: int | None = None
+    k: int = 3
+
+    async def _aget_relevant_documents(self, query: str) -> list[Document]:
+        if not self.project_id:
+            return []
+        vector = generate_embedding(query)
+        stmt = (
+            select(AIQueryEmbedding)
+            .where(AIQueryEmbedding.project_id == self.project_id)
+            .order_by(AIQueryEmbedding.embedding.cosine_distance(vector))
+            .limit(self.k)
+        )
+        rows = (await self.db.execute(stmt)).scalars().all()
+        return [Document(page_content=r.content_text, metadata={"ai_query_id": r.ai_query_id, "project_id": r.project_id}) for r in rows]
 
     def _get_relevant_documents(self, query: str) -> list[Document]:
         raise NotImplementedError("Use async retrieval via ainvoke/aget_relevant_documents")
@@ -99,6 +126,45 @@ async def _retrieve_project_summary(db: AsyncSession, project_id: int | None) ->
     return "\n".join(lines) + "\n"
 
 
+async def maybe_store_query_embedding(db: AsyncSession, query: AIQuery) -> None:
+    """Store a (question + answer) embedding for future retrieval, but only when
+    the query is project-specific and not a near-duplicate of an existing entry."""
+    if not query.project_id:
+        logger.info(f"AI_QUERY | store_embedding | query_id={query.id} | status=skipped | reason=no_project_id")
+        return
+
+    content_text = f"Q: {query.question}\nA: {query.answer}"
+    vector = generate_embedding(query.question)
+
+    closest = (
+        await db.execute(
+            select(AIQueryEmbedding.id, AIQueryEmbedding.embedding.cosine_distance(vector).label("distance"))
+            .where(AIQueryEmbedding.project_id == query.project_id)
+            .order_by("distance")
+            .limit(1)
+        )
+    ).first()
+
+    if closest is not None:
+        similarity = 1 - closest.distance
+        if similarity >= DUPLICATE_SIMILARITY_THRESHOLD:
+            logger.info(
+                f"AI_QUERY | store_embedding | query_id={query.id} | project_id={query.project_id} | "
+                f"status=skipped | reason=duplicate | similarity={similarity:.3f}"
+            )
+            return
+
+    embedding_row = AIQueryEmbedding(
+        ai_query_id=query.id,
+        project_id=query.project_id,
+        content_text=content_text,
+        embedding=vector,
+    )
+    db.add(embedding_row)
+    await db.flush()
+    logger.info(f"AI_QUERY | store_embedding | query_id={query.id} | project_id={query.project_id} | status=stored")
+
+
 async def retrieve_context(db: AsyncSession, question: str, project_id: int | None) -> str:
     context_parts: list[str] = []
     retriever = DailyLogEmbeddingRetriever(db=db, project_id=project_id, k=5)
@@ -114,6 +180,16 @@ async def retrieve_context(db: AsyncSession, question: str, project_id: int | No
     except Exception as e:
         logger.error(f"AI_QUERY | retrieve_context | semantic | error={str(e)}")
         context_parts.append("SEMANTIC_MATCHES: Retrieval failed.\n")
+    try:
+        past_qa_retriever = AIQueryEmbeddingRetriever(db=db, project_id=project_id, k=3)
+        past_qa_docs = await past_qa_retriever.ainvoke(question)
+        if past_qa_docs:
+            lines = ["PAST_ANSWERS (previously answered questions for this project):"]
+            for doc in past_qa_docs:
+                lines.append(f"  {doc.page_content}")
+            context_parts.append("\n".join(lines) + "\n")
+    except Exception as e:
+        logger.error(f"AI_QUERY | retrieve_context | past_answers | error={str(e)}")
     try:
         context_parts.append(await _retrieve_project_summary(db, project_id))
     except Exception as e:

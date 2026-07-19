@@ -11,7 +11,7 @@ from app.core.celery import celery_app
 from app.core.celery_db import make_celery_session
 from app.core.settings import settings
 from app.models.ai_query import AIQuery
-from app.services.ai_query import retrieve_context
+from app.services.ai_query import maybe_store_query_embedding, retrieve_context
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,7 @@ QUESTION: {question}"""
             query.answer = response.content
             query.status = "Done"
             logger.info(f"AI_QUERY | query_id={query_id} | status=done")
+            await maybe_store_query_embedding(db, query)
         except groq.RateLimitError as e:
             retry_after = None
             try:
