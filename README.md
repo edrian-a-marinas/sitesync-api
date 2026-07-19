@@ -14,7 +14,7 @@ Construction companies managing several job sites at once often lose track of da
 - **Daily site logging** — workers present, materials consumed, equipment used, and incidents, submitted per shift.
 - **File uploads** — progress photos, receipts, and inspection documents attached to daily logs.
 - **Automated weekly reports** — PDF reports generated in the background and stored for download.
-- **AI assistant** — ask natural language questions about cost, materials, workforce, or incidents across projects, powered by a LangChain + pgvector semantic search pipeline over historical site data.
+- **AI assistant** — ask natural language questions about cost, materials, workforce, or incidents across projects, powered by a LangChain + pgvector semantic search pipeline over historical site data. Answered queries are selectively embedded and reused as context for future questions within the same project.
 - **Machine learning** — predictive models estimate budget overruns, delay risk, and material costs.
 - **Live dashboards** — budget, workforce, and incident KPIs that update automatically as new activity is logged.
 - **Real-time notifications** — in-app alerts (incidents, budget overruns, weekly reports) pushed live via WebSocket, backed by MongoDB. with instant Slack notification via webhook.
@@ -69,7 +69,7 @@ flowchart LR
 - **Logging**: Centralized structured logging — tracks validation errors, HTTP exceptions, and startup connection health (DB, Redis, Celery)
 - **Migrations**: Alembic-managed, version-controlled schema history
 - **Code quality**: Enforced via Ruff (backend) and ESLint + Prettier (frontend)
-- **Testing**: 482 Pytest tests, 91% coverage — routers, services, and business logic
+- **Testing**: 492 Pytest tests, 91% coverage — routers, services, and business logic
 
 ---
 
