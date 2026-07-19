@@ -17,11 +17,12 @@ services:
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
-      timeout: 5s
-      retries: 5
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
   api:
-    build: .
+    image: ghcr.io/edrian-a-marinas/sitesync-api:latest
     restart: always
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     ports:
@@ -42,7 +43,7 @@ services:
         condition: service_healthy
 
   celery_worker:
-    build: .
+    image: ghcr.io/edrian-a-marinas/sitesync-api:latest
     restart: always
     command: celery -A app.core.celery:celery_app worker --loglevel=info
     env_file:
@@ -58,7 +59,7 @@ services:
         condition: service_healthy
         
   celery_beat:
-    build: .
+    image: ghcr.io/edrian-a-marinas/sitesync-api:latest
     restart: always
     command: celery -A app.core.celery:celery_app beat --loglevel=info
     env_file:
