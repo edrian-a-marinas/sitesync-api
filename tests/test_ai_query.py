@@ -11,11 +11,13 @@ from sqlalchemy import delete, select
 from app.core.settings import settings
 from app.models.ai_query import AIQuery
 from app.models.daily_log import DailyLog
-from app.models.embedding import DailyLogEmbedding
+from app.models.embedding import AIQueryEmbedding, DailyLogEmbedding
 from app.models.project import Project
 from app.services.ai_query import (
+    AIQueryEmbeddingRetriever,
     DailyLogEmbeddingRetriever,
     _retrieve_project_summary,
+    maybe_store_query_embedding,
     retrieve_context,
 )
 
@@ -551,3 +553,208 @@ class TestRetrieveContext:
                 context = await retrieve_context(session, "any question", project.id)
         assert "SEMANTIC_MATCHES" in context
         assert "PROJECT_SUMMARY: Retrieval failed." in context
+
+
+# ---------------------------------------------------------------------------
+# maybe_store_query_embedding (gate: project-specific + non-duplicate only)
+# ---------------------------------------------------------------------------
+class TestMaybeStoreQueryEmbedding:
+    async def _cleanup(self, test_session_factory, query_id: int):
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(AIQueryEmbedding).where(AIQueryEmbedding.ai_query_id == query_id))
+                await session.execute(delete(AIQuery).where(AIQuery.id == query_id))
+
+    async def test_skips_when_no_project_id(self, seed_users, test_session_factory):
+        async with test_session_factory() as session:
+            async with session.begin():
+                query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    project_id=None,
+                    question="Which project used the most cement?",
+                    answer="Project A used the most cement.",
+                    status="Done",
+                )
+                session.add(query)
+                await session.flush()
+                query_id = query.id
+                await maybe_store_query_embedding(session, query)
+        async with test_session_factory() as session:
+            result = await session.execute(select(AIQueryEmbedding).where(AIQueryEmbedding.ai_query_id == query_id))
+            assert result.scalar_one_or_none() is None
+        await self._cleanup(test_session_factory, query_id)
+
+    async def test_stores_when_project_specific_and_no_duplicate(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        fake_vector = [0.3] * 384
+        async with test_session_factory() as session:
+            async with session.begin():
+                query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    project_id=project.id,
+                    question="What is the budget status?",
+                    answer="Budget used is 40%.",
+                    status="Done",
+                )
+                session.add(query)
+                await session.flush()
+                query_id = query.id
+            with patch("app.services.ai_query.generate_embedding", return_value=fake_vector):
+                await maybe_store_query_embedding(session, query)
+            await session.commit()
+        async with test_session_factory() as session:
+            result = await session.execute(select(AIQueryEmbedding).where(AIQueryEmbedding.ai_query_id == query_id))
+            row = result.scalar_one_or_none()
+            assert row is not None
+            assert row.project_id == project.id
+            assert "What is the budget status?" in row.content_text
+            assert "Budget used is 40%." in row.content_text
+        await self._cleanup(test_session_factory, query_id)
+
+    async def test_skips_when_near_duplicate_exists(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        fake_vector = [0.4] * 384
+        async with test_session_factory() as session:
+            async with session.begin():
+                existing_query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    project_id=project.id,
+                    question="How much budget is left?",
+                    answer="60% remaining.",
+                    status="Done",
+                )
+                session.add(existing_query)
+                await session.flush()
+                existing_embedding = AIQueryEmbedding(
+                    ai_query_id=existing_query.id,
+                    project_id=project.id,
+                    content_text="Q: How much budget is left?\nA: 60% remaining.",
+                    embedding=fake_vector,
+                )
+                session.add(existing_embedding)
+                await session.flush()
+                existing_query_id = existing_query.id
+
+                new_query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    project_id=project.id,
+                    question="What budget remains?",
+                    answer="60% remaining.",
+                    status="Done",
+                )
+                session.add(new_query)
+                await session.flush()
+                new_query_id = new_query.id
+            with patch("app.services.ai_query.generate_embedding", return_value=fake_vector):
+                await maybe_store_query_embedding(session, new_query)
+            await session.commit()
+        async with test_session_factory() as session:
+            result = await session.execute(select(AIQueryEmbedding).where(AIQueryEmbedding.ai_query_id == new_query_id))
+            assert result.scalar_one_or_none() is None
+        await self._cleanup(test_session_factory, existing_query_id)
+        await self._cleanup(test_session_factory, new_query_id)
+
+
+# ---------------------------------------------------------------------------
+# AIQueryEmbeddingRetriever (past project-specific Q&A via pgvector cosine similarity)
+# ---------------------------------------------------------------------------
+class TestAIQueryEmbeddingRetriever:
+    async def _seed_embedding(self, test_session_factory, seed_users, project_id: int, content_text: str, vector: list[float]):
+        async with test_session_factory() as session:
+            async with session.begin():
+                query = AIQuery(
+                    user_id=seed_users["owner"].id,
+                    project_id=project_id,
+                    question="seed question",
+                    answer="seed answer",
+                    status="Done",
+                )
+                session.add(query)
+                await session.flush()
+                embedding = AIQueryEmbedding(
+                    ai_query_id=query.id,
+                    project_id=project_id,
+                    content_text=content_text,
+                    embedding=vector,
+                )
+                session.add(embedding)
+                await session.flush()
+                query_id = query.id
+        return query_id
+
+    async def _cleanup(self, test_session_factory, query_id: int):
+        async with test_session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(AIQueryEmbedding).where(AIQueryEmbedding.ai_query_id == query_id))
+                await session.execute(delete(AIQuery).where(AIQuery.id == query_id))
+
+    async def test_returns_empty_when_no_project_id(self, test_session_factory):
+        async with test_session_factory() as session:
+            retriever = AIQueryEmbeddingRetriever(db=session, project_id=None, k=3)
+            docs = await retriever.ainvoke("any question")
+        assert docs == []
+
+    async def test_returns_matching_documents_scoped_to_project(self, seed_ai_query_data, seed_users, test_session_factory):
+        project = seed_ai_query_data["project"]
+        fake_vector = [0.5] * 384
+        query_id = await self._seed_embedding(test_session_factory, seed_users, project.id, "Q: What is the budget?\nA: 40% used.", fake_vector)
+        with patch("app.services.ai_query.generate_embedding", return_value=fake_vector):
+            async with test_session_factory() as session:
+                retriever = AIQueryEmbeddingRetriever(db=session, project_id=project.id, k=3)
+                docs = await retriever.ainvoke("budget question")
+        assert len(docs) >= 1
+        assert any("budget" in d.page_content.lower() for d in docs)
+        assert all(d.metadata["project_id"] == project.id for d in docs)
+        await self._cleanup(test_session_factory, query_id)
+
+    async def test_sync_retrieval_not_implemented(self, test_session_factory):
+        async with test_session_factory() as session:
+            retriever = AIQueryEmbeddingRetriever(db=session, project_id=None, k=3)
+            with pytest.raises(NotImplementedError):
+                retriever._get_relevant_documents("question")
+
+
+# ---------------------------------------------------------------------------
+# retrieve_context — PAST_ANSWERS section (built on AIQueryEmbeddingRetriever)
+# ---------------------------------------------------------------------------
+class TestRetrieveContextPastAnswers:
+    async def test_includes_past_answers_when_relevant(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        fake_docs = [
+            Document(page_content="Q: What is the budget?\nA: 40% used.", metadata={"ai_query_id": 1, "project_id": project.id}),
+        ]
+        with (
+            patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])),
+            patch.object(AIQueryEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=fake_docs)),
+        ):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "budget question", project.id)
+        assert "PAST_ANSWERS" in context
+        assert "40% used." in context
+
+    async def test_omits_past_answers_section_when_none_found(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        with (
+            patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])),
+            patch.object(AIQueryEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])),
+        ):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "unrelated question", project.id)
+        assert "PAST_ANSWERS" not in context
+
+    async def test_omits_past_answers_when_no_project_id(self, test_session_factory):
+        with patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "general question", None)
+        assert "PAST_ANSWERS" not in context
+
+    async def test_past_answers_retrieval_failure_does_not_break_context(self, seed_ai_query_data, test_session_factory):
+        project = seed_ai_query_data["project"]
+        with (
+            patch.object(DailyLogEmbeddingRetriever, "ainvoke", new=AsyncMock(return_value=[])),
+            patch.object(AIQueryEmbeddingRetriever, "ainvoke", new=AsyncMock(side_effect=Exception("db exploded"))),
+        ):
+            async with test_session_factory() as session:
+                context = await retrieve_context(session, "any question", project.id)
+        assert "PROJECT_SUMMARY" in context
+        assert "PAST_ANSWERS" not in context
