@@ -84,8 +84,9 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             cd ~/sitesync-api
-            git pull origin main
+            df -h /
             docker system prune -af
+            git pull origin main
             docker compose up -d --build
 
       # commented out because AWS ALB / Load balancers deletion (costing too much)
