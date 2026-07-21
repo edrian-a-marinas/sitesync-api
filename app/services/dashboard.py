@@ -325,12 +325,6 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
         total_incidents_q = total_incidents_q.where(func.extract("year", DailyLog.log_date) == year)
     total_incidents = (await db.execute(total_incidents_q)).scalar() or 0
 
-    # Active projects last month delta
-    end_of_last_month = today.replace(day=1) - timedelta(days=1)
-    active_projects_last_month = (
-        await db.execute(select(func.count(Project.id)).where(Project.status == "Active").where(Project.start_date <= end_of_last_month))
-    ).scalar() or 0
-
     # Workers last week delta
     total_workers_last_week = (
         await db.execute(select(func.count(User.id)).join(User.role).where(Role.name == "site_worker").where(User.is_active))
@@ -355,7 +349,6 @@ async def get_owner_dashboard(db: AsyncSession, year: int | None = None) -> Owne
         total_material_cost=float(total_material_cost),
         incidents_this_week=incidents_this_week,
         total_incidents=total_incidents,
-        total_active_projects_delta=len(active_projects) - active_projects_last_month,
         total_workers_active_delta=total_workers - total_workers_last_week,
         **deltas,
     )
