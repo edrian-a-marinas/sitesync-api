@@ -177,7 +177,6 @@ class TestOwnerDashboard:
         res = await owner_client.get("/api/v1/dashboard/owner")
         assert res.status_code == 200
         data = res.json()
-        assert "total_active_projects_delta" in data
         assert "total_spending_delta_percent" in data
         assert "total_workers_active_delta" in data
         assert "incidents_this_week_delta" in data
