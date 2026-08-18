@@ -38,6 +38,8 @@ class Settings(BaseSettings):
 
     DUPLICATE_SIMILARITY_THRESHOLD: float = 0.90
 
+    GROQ_MODEL: str = "openai/gpt-oss-120b"
+
     # Redis Caching invalidation TTL.
     DEFAULT_CACHE_TTL: int = (
         3600  # 1 hour — used by equipment, attendance, daily_log, incident, material, report, site_photo, worker projects nad ML cache
