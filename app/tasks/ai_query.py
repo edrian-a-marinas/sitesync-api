@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def get_groq_client() -> ChatGroq:
     if not settings.GROQ_API_KEY:
         raise ValueError("GROQ_API_KEY is not set")
-    return ChatGroq(api_key=settings.GROQ_API_KEY, model="llama-3.3-70b-versatile", max_retries=0, timeout=12.0, max_tokens=500)
+    return ChatGroq(api_key=settings.GROQ_API_KEY, model=settings.GROQ_MODEL, max_retries=0, timeout=12.0, max_tokens=500)
 
 
 @celery_app.task(name="process_ai_query")
