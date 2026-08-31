@@ -110,7 +110,7 @@ jobs:
             git pull origin main
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
-            docker compose up -d
+            docker compose up -d --force-recreate
             docker image prune -f
 
       # commented out because AWS ALB / Load balancers deletion (costing too much)

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: Optional[str] = None
 
     # ----------------- Constants / hard coded -----------------
+    # Database
+    POOL_SIZE: int = 20
+    MAX_OVERFLOW: int = 10
+    POOL_TIMEOUT: int = 30
+    POOL_RECYCLE: int = 300
+
     ROW_LIMIT: int = 20
 
     PENDING_TIMEOUT_MINUTES: int = 5
